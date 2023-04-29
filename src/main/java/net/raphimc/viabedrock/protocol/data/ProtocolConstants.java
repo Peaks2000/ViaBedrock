@@ -15,25 +15,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package net.raphimc.viabedrock.api;
+package net.raphimc.viabedrock.protocol.data;
 
-import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
+public class ProtocolConstants {
 
-import java.util.ArrayList;
-import java.util.List;
-
-public class BedrockProtocolVersion {
-
-    public static final List<ProtocolVersion> PROTOCOLS = new ArrayList<>();
-    public static final String LATEST_BEDROCK_VERSION = "1.19.80";
-
-    public static final ProtocolVersion bedrockLatest = registerBedrock(1_000_582, "Bedrock " + LATEST_BEDROCK_VERSION);
-
-
-    private static ProtocolVersion registerBedrock(final int version, final String name) {
-        final ProtocolVersion protocolVersion = ProtocolVersion.register(version, name);
-        PROTOCOLS.add(protocolVersion);
-        return protocolVersion;
-    }
+    public static final int COMMAND_VERSION = 33;
+    public static final short REQUEST_CHUNK_RADIUS_MAX_RADIUS = 28;
 
 }
