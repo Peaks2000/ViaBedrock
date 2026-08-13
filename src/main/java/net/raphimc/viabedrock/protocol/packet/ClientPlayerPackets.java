@@ -553,26 +553,39 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.POSITION_3F, clientPlayer.position()); // position
             wrapper.write(BedrockTypes.POSITION_2F, MathUtil.calculateMovementDirections(clientPlayer.authInputData(), clientPlayer.isSneaking())); // move vector
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().z()); // head yaw
-            wrapper.write(BedrockTypes.UNSIGNED_VAR_BIG_INTEGER, EnumUtil.getBigBitmaskFromEnumSet(clientPlayer.authInputData(), PlayerAuthInputPacketPayload_InputData::getValue)); // input flags
+            wrapper.write(Types.BOOLEAN, true); // input data present
+            wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, clientPlayer.authInputData().size()); // input flags count
+            for (PlayerAuthInputPacketPayload_InputData inputData : clientPlayer.authInputData()) {
+                wrapper.write(BedrockTypes.VAR_INT, inputData.getValue()); // input flag
+            }
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, InputMode.Mouse.getValue()); // input mode
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ClientPlayMode.Screen.getValue()); // play mode
-            wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, NewInteractionModel.Touch.getValue()); // interaction mode
+            wrapper.write(BedrockTypes.VAR_INT, NewInteractionModel.Touch.getValue()); // interaction mode
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().x()); // interact pitch
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().y()); // interact yaw
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, (long) clientPlayer.age()); // tick
             wrapper.write(BedrockTypes.POSITION_3F, velocity); // delta
+            wrapper.write(Types.BOOLEAN, true); // Item Use Transaction field present
+            wrapper.write(Types.BOOLEAN, false); // no Item Use Transaction value
+            wrapper.write(Types.BOOLEAN, true); // Item Stack Request field present
+            wrapper.write(Types.BOOLEAN, false); // no Item Stack Request value
+            wrapper.write(Types.BOOLEAN, true); // Player Block Actions field present
             if (clientPlayer.authInputData().contains(PlayerAuthInputPacketPayload_InputData.PerformBlockActions)) {
-                wrapper.write(BedrockTypes.VAR_INT, clientPlayer.authInputBlockActions().size()); // player block actions count
+                wrapper.write(Types.BOOLEAN, true); // Player Block Actions value present
+                wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, clientPlayer.authInputBlockActions().size()); // player block actions count
                 for (ClientPlayerEntity.AuthInputBlockAction blockAction : clientPlayer.authInputBlockActions()) {
                     wrapper.write(BedrockTypes.VAR_INT, blockAction.action().getValue()); // action
-                    switch (blockAction.action()) {
-                        case StartDestroyBlock, AbortDestroyBlock, CrackBlock, PredictDestroyBlock, ContinueDestroyBlock -> {
-                            wrapper.write(BedrockTypes.BLOCK_POSITION, blockAction.position()); // position
-                            wrapper.write(BedrockTypes.VAR_INT, blockAction.direction()); // facing
-                        }
-                    }
+                    final BlockPosition position = blockAction.position() != null ? blockAction.position() : new BlockPosition(0, 0, 0);
+                    wrapper.write(BedrockTypes.BLOCK_POSITION, position); // position
+                    wrapper.write(BedrockTypes.VAR_INT, blockAction.position() != null ? blockAction.direction() : 0); // facing
                 }
+            } else {
+                wrapper.write(Types.BOOLEAN, false); // no Player Block Actions value
             }
+            wrapper.write(Types.BOOLEAN, true); // Vehicle Rotation field present
+            wrapper.write(Types.BOOLEAN, false); // no Vehicle Rotation value
+            wrapper.write(Types.BOOLEAN, true); // Client Predicted Vehicle field present
+            wrapper.write(Types.BOOLEAN, false); // no Client Predicted Vehicle value
             wrapper.write(BedrockTypes.POSITION_2F, new Position2f(0F, 0F)); // analog move vector
             wrapper.write(BedrockTypes.POSITION_3F, MathUtil.calculateCameraOrientation(clientPlayer.rotation().y(), clientPlayer.rotation().x())); // camera orientation
             wrapper.write(BedrockTypes.POSITION_2F, MathUtil.calculateMovementDirections(clientPlayer.authInputData(), false)); // raw move vector
