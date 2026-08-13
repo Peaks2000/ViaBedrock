@@ -29,6 +29,10 @@ public class EntityDataType extends EntityDataTypeTemplate {
     public EntityData read(ByteBuf buffer) {
         final int index = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
         final int rawDataItemType = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
+        final int oneOfDataItemType = buffer.readUnsignedByte();
+        if (rawDataItemType != oneOfDataItemType) {
+            throw new IllegalStateException("Mismatched DataItemType discriminants: " + rawDataItemType + " != " + oneOfDataItemType);
+        }
         final DataItemType dataItemType = DataItemType.getByValue(rawDataItemType, DataItemType.Unknown);
         if (dataItemType == DataItemType.Unknown) { // Bedrock client disconnects if the data item type is not valid
             throw new IllegalStateException("Unknown DataItemType: " + rawDataItemType);
@@ -41,6 +45,7 @@ public class EntityDataType extends EntityDataTypeTemplate {
     public void write(ByteBuf buffer, EntityData value) {
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.id());
         BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.dataType().typeId());
+        buffer.writeByte(value.dataType().typeId());
         value.dataType().type().write(buffer, value.value());
     }
 
