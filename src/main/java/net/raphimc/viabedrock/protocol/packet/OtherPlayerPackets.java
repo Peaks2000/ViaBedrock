@@ -73,23 +73,39 @@ public class OtherPlayerPackets {
             final GameType gameType = GameType.getByValue(wrapper.read(BedrockTypes.VAR_INT), GameType.Undefined); // game type
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
             final EntityProperties entityProperties = wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
-            final PlayerAbilities abilities = wrapper.read(BedrockTypes.PLAYER_ABILITIES); // abilities
-            final EntityLink[] entityLinks;
-            final String deviceId;
-            final int deviceOs;
             final ByteBuf inputBuffer = ((PacketWrapperImpl) wrapper).getInputBuffer();
-            if (inputBuffer.readableBytes() >= 6) {
+            final int abilitiesStartIndex = inputBuffer.readerIndex();
+            PlayerAbilities abilities;
+            EntityLink[] entityLinks;
+            String deviceId;
+            int deviceOs;
+            try {
+                abilities = wrapper.read(BedrockTypes.PLAYER_ABILITIES); // abilities
                 entityLinks = wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
                 deviceId = wrapper.read(BedrockTypes.STRING); // device id
                 deviceOs = wrapper.read(BedrockTypes.INT_LE); // device os
-            } else {
-                // Lifeboat and similar servers can omit the cereal tail for synthetic players.
+            } catch (Exception e) {
+                if (!hasBufferUnderflowCause(e)) {
+                    throw e;
+                }
+
+                // Some third-party 2168 servers emit synthetic players with the cereal payload
+                // cut at different points. Rewind only this section after a proven underflow and
+                // retain its identity/permissions while discarding the unusable partial layer.
+                inputBuffer.readerIndex(abilitiesStartIndex);
+                if (!inputBuffer.isReadable(Long.BYTES + 2)) {
+                    throw e;
+                }
+                final long entityUniqueId = inputBuffer.readLongLE();
+                final byte playerPermission = inputBuffer.readByte();
+                final byte commandPermission = inputBuffer.readByte();
+                final int truncatedBytes = inputBuffer.readableBytes();
+                inputBuffer.skipBytes(truncatedBytes);
+                abilities = new PlayerAbilities(entityUniqueId, playerPermission, commandPermission);
                 entityLinks = new EntityLink[0];
                 deviceId = "";
                 deviceOs = 0;
-                final int omittedTailBytes = inputBuffer.readableBytes();
-                inputBuffer.skipBytes(omittedTailBytes);
-                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received truncated ADD_PLAYER tail (" + omittedTailBytes + " bytes); using compatibility defaults");
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received truncated synthetic ADD_PLAYER payload (" + truncatedBytes + " bytes after permissions); using compatibility defaults");
             }
 
             final PlayerEntity entity = entityTracker.addEntity(new PlayerEntity(wrapper.user(), entityRuntimeId, entityTracker.getNextJavaEntityId(), uuid, abilities));
@@ -213,6 +229,17 @@ public class OtherPlayerPackets {
                 wrapper.cancel();
             }
         });
+    }
+
+    private static boolean hasBufferUnderflowCause(final Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause != null) {
+            if (cause instanceof IndexOutOfBoundsException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
 }
