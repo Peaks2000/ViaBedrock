@@ -86,7 +86,11 @@ public class CompressionCodec extends ByteToMessageCodec<ByteBuf> {
         }
 
         final int rawAlgorithm = in.readUnsignedByte();
-        final PacketCompressionAlgorithm algorithm = PacketCompressionAlgorithm.getByValue(rawAlgorithm);
+        // NetworkSettings carries this enum as uint16 (None = 65535), but the
+        // per-batch compression header is uint8 and therefore carries 0xFF.
+        final PacketCompressionAlgorithm algorithm = rawAlgorithm == (PacketCompressionAlgorithm.None.getValue() & 0xFF)
+                ? PacketCompressionAlgorithm.None
+                : PacketCompressionAlgorithm.getByValue(rawAlgorithm);
         if (algorithm == null) { // Bedrock client drops the packet if the algorithm is unknown
             ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Dropping packet with unknown PacketCompressionAlgorithm: " + rawAlgorithm);
             in.skipBytes(in.readableBytes());

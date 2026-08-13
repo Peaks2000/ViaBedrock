@@ -51,7 +51,7 @@ import net.raphimc.viabedrock.protocol.data.DataValues;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viabedrock.protocol.data.enums.Dimension;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.Difficulty;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.InteractPacket_Action;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.Relative;
@@ -153,7 +153,7 @@ public class JoinPackets {
                         if (clientPlayer.isInitiallySpawned()) return;
 
                         final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, wrapper.user());
-                        interact.write(Types.UNSIGNED_BYTE, (short) InteractPacket_Action.InteractUpdate.getValue()); // action
+                        interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.InteractUpdate.getValue()); // action
                         interact.write(BedrockTypes.UNSIGNED_VAR_LONG, 0L); // target entity runtime id
                         interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
                         interact.sendToServer(BedrockProtocol.class);
