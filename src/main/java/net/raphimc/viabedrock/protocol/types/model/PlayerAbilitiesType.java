@@ -47,19 +47,23 @@ public class PlayerAbilitiesType extends Type<PlayerAbilities> {
             final SerializedAbilitiesData_SerializedAbilitiesLayer layer = SerializedAbilitiesData_SerializedAbilitiesLayer.getByValue(buffer.readUnsignedShortLE(), SerializedAbilitiesData_SerializedAbilitiesLayer.CustomCache);
             final Set<AbilitiesIndex> abilitiesSet = EnumUtil.getEnumSetFromBitmask(AbilitiesIndex.class, buffer.readUnsignedIntLE(), AbilitiesIndex::getValue);
             final Set<AbilitiesIndex> abilityValues = EnumUtil.getEnumSetFromBitmask(AbilitiesIndex.class, buffer.readUnsignedIntLE(), AbilitiesIndex::getValue);
-            final float flySpeed = buffer.readFloatLE();
-            // Some third-party 2168 servers still terminate synthetic ADD_PLAYER packets after
-            // the first speed even though the cereal schema contains all three. Keep strict
-            // parsing whenever the fields are present, but use vanilla defaults at packet end so
-            // one malformed NPC cannot disconnect the client.
-            final float verticalFlySpeed;
-            final float walkSpeed;
-            if (i == layerCount - 1 && !buffer.isReadable(Float.BYTES)) {
-                verticalFlySpeed = 1F;
-                walkSpeed = 0.1F;
-            } else {
+            // Some third-party 2168 servers omit some or all speed fields on synthetic players.
+            // Complete cereal layers still use all three floats. Exact legacy packet-end shapes
+            // use one or two floats; shorter remnants belong to the optional ADD_PLAYER tail and
+            // must not be consumed as a float.
+            float flySpeed = 0.05F;
+            float verticalFlySpeed = 1F;
+            float walkSpeed = 0.1F;
+            final int readableBytes = buffer.readableBytes();
+            if (readableBytes >= Float.BYTES * 3) {
+                flySpeed = buffer.readFloatLE();
                 verticalFlySpeed = buffer.readFloatLE();
                 walkSpeed = buffer.readFloatLE();
+            } else if (i == layerCount - 1 && readableBytes == Float.BYTES * 2) {
+                flySpeed = buffer.readFloatLE();
+                walkSpeed = buffer.readFloatLE();
+            } else if (i == layerCount - 1 && readableBytes == Float.BYTES) {
+                flySpeed = buffer.readFloatLE();
             }
             if (!abilityLayers.containsKey(layer)) {
                 abilityLayers.put(layer, new PlayerAbilities.AbilitiesLayer(abilitiesSet, abilityValues, walkSpeed, flySpeed, verticalFlySpeed));

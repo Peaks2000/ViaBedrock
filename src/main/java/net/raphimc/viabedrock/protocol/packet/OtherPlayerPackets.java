@@ -25,7 +25,9 @@ import com.viaversion.viaversion.api.minecraft.entitydata.EntityData;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
+import com.viaversion.viaversion.protocol.packet.PacketWrapperImpl;
 import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPackets26_1;
+import io.netty.buffer.ByteBuf;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.model.entity.Entity;
@@ -75,7 +77,8 @@ public class OtherPlayerPackets {
             final EntityLink[] entityLinks;
             final String deviceId;
             final int deviceOs;
-            if (wrapper.isReadable(Types.BYTE, 0)) {
+            final ByteBuf inputBuffer = ((PacketWrapperImpl) wrapper).getInputBuffer();
+            if (inputBuffer.readableBytes() >= 6) {
                 entityLinks = wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
                 deviceId = wrapper.read(BedrockTypes.STRING); // device id
                 deviceOs = wrapper.read(BedrockTypes.INT_LE); // device os
@@ -84,7 +87,9 @@ public class OtherPlayerPackets {
                 entityLinks = new EntityLink[0];
                 deviceId = "";
                 deviceOs = 0;
-                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received truncated ADD_PLAYER tail; using compatibility defaults");
+                final int omittedTailBytes = inputBuffer.readableBytes();
+                inputBuffer.skipBytes(omittedTailBytes);
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received truncated ADD_PLAYER tail (" + omittedTailBytes + " bytes); using compatibility defaults");
             }
 
             final PlayerEntity entity = entityTracker.addEntity(new PlayerEntity(wrapper.user(), entityRuntimeId, entityTracker.getNextJavaEntityId(), uuid, abilities));
