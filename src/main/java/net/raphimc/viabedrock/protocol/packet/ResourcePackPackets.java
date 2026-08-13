@@ -153,7 +153,9 @@ public class ResourcePackPackets {
                 wrapper.user().put(new ResourcePackStorage(resourcePacks));
             }
 
-            if (loadStateTracker == null || !loadStateTracker.hasJavaClientAccepted()) {
+            final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
+            if ((loadStateTracker == null || !loadStateTracker.hasJavaClientAccepted())
+                    && (resourcePackStorage == null || resourcePackStorage.markBedrockStackFinishedSent())) {
                 final PacketWrapper resourcePackClientResponse = wrapper.create(ServerboundBedrockPackets.RESOURCE_PACK_CLIENT_RESPONSE);
                 resourcePackClientResponse.write(Types.BYTE, (byte) ResourcePackResponse.ResourcePackStackFinished.getValue()); // status
                 resourcePackClientResponse.write(BedrockTypes.STRING, "resourcepackstackfinished"); // #blameMojang
@@ -211,12 +213,21 @@ public class ResourcePackPackets {
                     final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
                     if (resourcePackStorage != null) {
                         resourcePackStorage.setLoadedOnJavaClient();
+                        if (!resourcePackStorage.markBedrockStackFinishedSent()) {
+                            wrapper.cancel();
+                            break;
+                        }
                     }
                     wrapper.write(Types.BYTE, (byte) ResourcePackResponse.ResourcePackStackFinished.getValue()); // status
                     wrapper.write(BedrockTypes.STRING, "resourcepackstackfinished"); // #blameMojang
                 }
                 case FAILED_DOWNLOAD, FAILED_RELOAD, DISCARDED -> {
                     ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Client resource pack download/load failed");
+                    final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
+                    if (resourcePackStorage != null && !resourcePackStorage.markBedrockStackFinishedSent()) {
+                        wrapper.cancel();
+                        break;
+                    }
                     wrapper.write(Types.BYTE, (byte) ResourcePackResponse.ResourcePackStackFinished.getValue()); // status
                     wrapper.write(BedrockTypes.STRING, "resourcepackstackfinished"); // #blameMojang
                 }

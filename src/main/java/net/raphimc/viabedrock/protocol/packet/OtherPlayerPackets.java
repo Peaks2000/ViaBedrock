@@ -72,7 +72,20 @@ public class OtherPlayerPackets {
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
             final EntityProperties entityProperties = wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
             final PlayerAbilities abilities = wrapper.read(BedrockTypes.PLAYER_ABILITIES); // abilities
-            final EntityLink[] entityLinks = wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
+            final EntityLink[] entityLinks;
+            final String deviceId;
+            final int deviceOs;
+            if (wrapper.isReadable(Types.BYTE, 0)) {
+                entityLinks = wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
+                deviceId = wrapper.read(BedrockTypes.STRING); // device id
+                deviceOs = wrapper.read(BedrockTypes.INT_LE); // device os
+            } else {
+                // Lifeboat and similar servers can omit the cereal tail for synthetic players.
+                entityLinks = new EntityLink[0];
+                deviceId = "";
+                deviceOs = 0;
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received truncated ADD_PLAYER tail; using compatibility defaults");
+            }
 
             final PlayerEntity entity = entityTracker.addEntity(new PlayerEntity(wrapper.user(), entityRuntimeId, entityTracker.getNextJavaEntityId(), uuid, abilities));
             entity.setPosition(position);
@@ -86,8 +99,8 @@ public class OtherPlayerPackets {
             playerInfoUpdate.write(Types.STRING, StringUtil.encodeUUID(uuid)); // username
             playerInfoUpdate.write(Types.PROFILE_PROPERTY_ARRAY, new GameProfile.Property[]{
                     new GameProfile.Property("platform_online_id", platformOnlineId),
-                    new GameProfile.Property("device_id", wrapper.read(BedrockTypes.STRING)), // device id
-                    new GameProfile.Property("device_os", wrapper.read(BedrockTypes.INT_LE).toString()) // device os
+                    new GameProfile.Property("device_id", deviceId),
+                    new GameProfile.Property("device_os", Integer.toString(deviceOs))
             }); // properties
             playerInfoUpdate.write(Types.VAR_INT, GameTypeRewriter.getEffectiveGameMode(gameType, gameSession.getLevelGameType()).ordinal()); // game mode
             playerInfoUpdate.send(BedrockProtocol.class);

@@ -24,6 +24,7 @@ import net.raphimc.viabedrock.protocol.BedrockProtocol;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ResourcePackStorage implements StorableObject {
 
@@ -31,6 +32,7 @@ public class ResourcePackStorage implements StorableObject {
     private final Set<ResourcePack> packStackTopToBottom = Collections.newSetFromMap(new LinkedHashMap<>(128, 0.75F, false));
 
     private boolean loadedOnJavaClient;
+    private final AtomicBoolean bedrockStackFinishedSent = new AtomicBoolean();
     private final Map<String, Object> converterData = new ConcurrentHashMap<>();
 
     private final TextDefinitions texts;
@@ -88,6 +90,10 @@ public class ResourcePackStorage implements StorableObject {
 
     public void setLoadedOnJavaClient() {
         this.loadedOnJavaClient = true;
+    }
+
+    public boolean markBedrockStackFinishedSent() {
+        return this.bedrockStackFinishedSent.compareAndSet(false, true);
     }
 
     public Map<String, Object> getConverterData() {

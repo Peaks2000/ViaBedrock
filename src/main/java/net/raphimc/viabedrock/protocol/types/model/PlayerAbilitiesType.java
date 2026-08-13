@@ -48,8 +48,19 @@ public class PlayerAbilitiesType extends Type<PlayerAbilities> {
             final Set<AbilitiesIndex> abilitiesSet = EnumUtil.getEnumSetFromBitmask(AbilitiesIndex.class, buffer.readUnsignedIntLE(), AbilitiesIndex::getValue);
             final Set<AbilitiesIndex> abilityValues = EnumUtil.getEnumSetFromBitmask(AbilitiesIndex.class, buffer.readUnsignedIntLE(), AbilitiesIndex::getValue);
             final float flySpeed = buffer.readFloatLE();
-            final float verticalFlySpeed = buffer.readFloatLE();
-            final float walkSpeed = buffer.readFloatLE();
+            // Some third-party 2168 servers still terminate synthetic ADD_PLAYER packets after
+            // the first speed even though the cereal schema contains all three. Keep strict
+            // parsing whenever the fields are present, but use vanilla defaults at packet end so
+            // one malformed NPC cannot disconnect the client.
+            final float verticalFlySpeed;
+            final float walkSpeed;
+            if (i == layerCount - 1 && !buffer.isReadable(Float.BYTES)) {
+                verticalFlySpeed = 1F;
+                walkSpeed = 0.1F;
+            } else {
+                verticalFlySpeed = buffer.readFloatLE();
+                walkSpeed = buffer.readFloatLE();
+            }
             if (!abilityLayers.containsKey(layer)) {
                 abilityLayers.put(layer, new PlayerAbilities.AbilitiesLayer(abilitiesSet, abilityValues, walkSpeed, flySpeed, verticalFlySpeed));
             }
