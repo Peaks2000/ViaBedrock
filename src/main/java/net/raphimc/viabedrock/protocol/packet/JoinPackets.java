@@ -285,12 +285,22 @@ public class JoinPackets {
                         if (wrapper.read(Types.BOOLEAN)) { // has gathering join information
                             wrapper.read(BedrockTypes.UUID); // experience id
                             wrapper.read(BedrockTypes.STRING); // experience name
-                            wrapper.read(BedrockTypes.UUID); // experience world id
-                            wrapper.read(BedrockTypes.STRING); // experience world name
+                            if (wrapper.read(Types.BOOLEAN)) { // has experience world id
+                                wrapper.read(BedrockTypes.UUID); // experience world id
+                            }
+                            if (wrapper.read(Types.BOOLEAN)) { // has experience world name
+                                wrapper.read(BedrockTypes.STRING); // experience world name
+                            }
                             wrapper.read(BedrockTypes.STRING); // creator id
-                            wrapper.read(BedrockTypes.UUID); // target id
-                            wrapper.read(BedrockTypes.STRING); // scenario id
-                            wrapper.read(BedrockTypes.STRING); // server id
+                            if (wrapper.read(Types.BOOLEAN)) { // has target id
+                                wrapper.read(BedrockTypes.UUID); // target id
+                            }
+                            if (wrapper.read(Types.BOOLEAN)) { // has scenario id
+                                wrapper.read(BedrockTypes.STRING); // scenario id
+                            }
+                            if (wrapper.read(Types.BOOLEAN)) { // has server id
+                                wrapper.read(BedrockTypes.STRING); // server id
+                            }
                         }
                         if (wrapper.read(Types.BOOLEAN)) { // has store entry point info
                             wrapper.read(BedrockTypes.STRING); // store id
