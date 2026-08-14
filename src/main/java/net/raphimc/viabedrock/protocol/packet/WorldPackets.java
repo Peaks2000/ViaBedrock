@@ -231,7 +231,9 @@ public class WorldPackets {
                 }
             }
 
-            final BedrockChunk chunk = chunkTracker.createChunk(chunkX, chunkZ, sectionCount);
+            // Request-mode LevelChunk packets normally embed zero sections. Keep the requested
+            // range mergeable so block updates can be queued until each SubChunk response arrives.
+            final BedrockChunk chunk = chunkTracker.createChunk(chunkX, chunkZ, requestSubChunks ? requestSectionCount : sectionCount);
             if (chunk == null) {
                 return;
             }
