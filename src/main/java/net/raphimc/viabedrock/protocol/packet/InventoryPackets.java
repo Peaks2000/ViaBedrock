@@ -202,6 +202,15 @@ public class InventoryPackets {
             if (container != null && container.setItem(slot, item)) {
                 if (container.type() == ContainerType.HUD && slot == 0) { // cursor item
                     wrapper.setPacketType(ClientboundPackets26_1.SET_CURSOR_ITEM);
+                } else if (container == inventoryTracker.getInventoryContainer()
+                    || container == inventoryTracker.getArmorContainer()
+                    || container == inventoryTracker.getOffhandContainer()) {
+                    // Bedrock sends authoritative player inventory changes (including item pickups) as
+                    // individual slots. Refresh Java's combined player inventory so its hotbar, armor and
+                    // offhand views all observe the same update, even while another screen is open.
+                    wrapper.setPacketType(ClientboundPackets26_1.CONTAINER_SET_CONTENT);
+                    PacketFactory.writeJavaContainerSetContent(wrapper, inventoryTracker.getInventoryContainer());
+                    return;
                 } else {
                     final Container javaContainer = container.type() == ContainerType.HUD
                         && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer
