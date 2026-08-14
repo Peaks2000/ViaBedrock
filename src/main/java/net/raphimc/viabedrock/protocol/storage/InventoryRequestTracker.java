@@ -11,10 +11,16 @@ package net.raphimc.viabedrock.protocol.storage;
 
 import com.viaversion.viaversion.api.connection.StoredObject;
 import com.viaversion.viaversion.api.connection.UserConnection;
+import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.libs.fastutil.ints.Int2ObjectOpenHashMap;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.protocol.BedrockProtocol;
+import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.InventoryStackRequest;
+import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
+import net.raphimc.viabedrock.protocol.types.BedrockTypes;
+import net.raphimc.viabedrock.protocol.types.inventory.InventoryStackRequestType;
 
 import java.util.List;
 import java.util.Map;
@@ -32,7 +38,12 @@ public final class InventoryRequestTracker extends StoredObject {
         final int requestId = this.nextRequestId;
         this.nextRequestId -= 2; // Bedrock client request IDs are negative odd numbers
         this.pendingRequests.put(requestId, new PendingRequest(snapshots));
-        InventoryStackRequest.send(this.user(), requestId, actions);
+        final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
+        final InventoryStackRequestType requestType = new InventoryStackRequestType(runtimeId -> itemRewriter.getItems().inverse().get(runtimeId));
+        final PacketWrapper request = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, this.user());
+        request.write(BedrockTypes.UNSIGNED_VAR_INT, 1); // requests
+        request.write(requestType, new InventoryStackRequest(requestId, actions));
+        request.sendToServer(BedrockProtocol.class);
     }
 
     public PendingRequest remove(final int requestId) {

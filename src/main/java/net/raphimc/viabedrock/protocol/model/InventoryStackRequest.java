@@ -9,129 +9,112 @@
  */
 package net.raphimc.viabedrock.protocol.model;
 
-import com.viaversion.viaversion.api.connection.UserConnection;
-import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
-import com.viaversion.viaversion.api.type.Types;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import net.raphimc.viabedrock.protocol.BedrockProtocol;
-import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ItemStackRequestActionType;
-import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
-import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.List;
+import java.util.Objects;
 
-/** Protocol-2168 Cereal encoding for the basic server-authoritative inventory actions. */
-public final class InventoryStackRequest {
+/** Protocol-2168 Cereal model for a server-authoritative inventory request. */
+public record InventoryStackRequest(int requestId, List<Action> actions) {
 
-    private InventoryStackRequest() {
-    }
-
-    public static void send(final UserConnection user, final int requestId, final List<Action> actions) {
-        final PacketWrapper request = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, user);
-        request.write(BedrockTypes.UNSIGNED_VAR_INT, 1); // requests
-        request.write(BedrockTypes.VAR_INT, requestId);
-        request.write(BedrockTypes.UNSIGNED_VAR_INT, actions.size());
-        for (Action action : actions) {
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, action.mappedType());
-            request.write(Types.BYTE, (byte) action.type().getValue()); // Cereal variant discriminator
-            action.write(request);
+    public InventoryStackRequest {
+        if (requestId >= 0 || (requestId & 1) == 0) {
+            throw new IllegalArgumentException("Bedrock client request IDs must be negative odd numbers: " + requestId);
         }
-        request.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // filter strings
-        request.write(BedrockTypes.INT_LE, -1); // no text-processing origin
-        request.sendToServer(BedrockProtocol.class);
-    }
-
-    private static void writeSlot(final PacketWrapper request, final Slot slot) {
-        request.write(BedrockTypes.FULL_CONTAINER_NAME, slot.container());
-        request.write(Types.UNSIGNED_BYTE, (short) slot.slot());
-        request.write(BedrockTypes.INT_LE, slot.stackNetworkId());
+        actions = List.copyOf(actions);
+        if (actions.isEmpty() || actions.size() > 100) {
+            throw new IllegalArgumentException("Inventory requests must contain between 1 and 100 actions");
+        }
     }
 
     public record Slot(FullContainerName container, int slot, int stackNetworkId) {
+        public Slot {
+            Objects.requireNonNull(container, "container");
+            if (slot < 0 || slot > 255) {
+                throw new IllegalArgumentException("Inventory request slot must fit an unsigned byte: " + slot);
+            }
+        }
     }
 
-    public sealed interface Action permits Take, Place, Swap, Drop, Consume, CraftRecipe, CraftResults {
+    public sealed interface Action permits Take, Place, Swap, Drop, Consume, CraftRecipe, CraftResultsDeprecated {
 
         ItemStackRequestActionType type();
 
         default int mappedType() {
             return this.type().getValue();
         }
-
-        void write(PacketWrapper request);
     }
 
     public record Take(int count, Slot source, Slot destination) implements Action {
+        public Take {
+            validateStackCount(count);
+            Objects.requireNonNull(source, "source");
+            Objects.requireNonNull(destination, "destination");
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Take;
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(Types.UNSIGNED_BYTE, (short) this.count);
-            writeSlot(request, this.source);
-            writeSlot(request, this.destination);
-        }
     }
 
     public record Place(int count, Slot source, Slot destination) implements Action {
+        public Place {
+            validateStackCount(count);
+            Objects.requireNonNull(source, "source");
+            Objects.requireNonNull(destination, "destination");
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Place;
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(Types.UNSIGNED_BYTE, (short) this.count);
-            writeSlot(request, this.source);
-            writeSlot(request, this.destination);
-        }
     }
 
     public record Swap(Slot source, Slot destination) implements Action {
+        public Swap {
+            Objects.requireNonNull(source, "source");
+            Objects.requireNonNull(destination, "destination");
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Swap;
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            writeSlot(request, this.source);
-            writeSlot(request, this.destination);
-        }
     }
 
     public record Drop(int count, Slot source, boolean randomly) implements Action {
+        public Drop {
+            validateStackCount(count);
+            Objects.requireNonNull(source, "source");
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Drop;
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(Types.UNSIGNED_BYTE, (short) this.count);
-            writeSlot(request, this.source);
-            request.write(Types.BOOLEAN, this.randomly);
-        }
     }
 
     public record Consume(int count, Slot source) implements Action {
+        public Consume {
+            validateStackCount(count);
+            Objects.requireNonNull(source, "source");
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Consume;
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(Types.UNSIGNED_BYTE, (short) this.count);
-            writeSlot(request, this.source);
-        }
     }
 
     public record CraftRecipe(int recipeNetworkId, int requestedCrafts) implements Action {
+        public CraftRecipe {
+            if (recipeNetworkId <= 0) {
+                throw new IllegalArgumentException("Recipe network ID must be positive: " + recipeNetworkId);
+            }
+            validateCraftCount(requestedCrafts);
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.CraftRecipe;
@@ -141,15 +124,22 @@ public final class InventoryStackRequest {
         public int mappedType() {
             return 10; // Protocol 2168 removes the two deprecated item-container actions from the mapped enum.
         }
-
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, this.recipeNetworkId);
-            request.write(Types.BYTE, (byte) this.requestedCrafts);
-        }
     }
 
-    public record CraftResults(List<BedrockItem> results, int timesCrafted) implements Action {
+    public record CraftResultsDeprecated(List<BedrockItem> results, int timesCrafted) implements Action {
+        public CraftResultsDeprecated {
+            results = List.copyOf(results);
+            if (results.isEmpty()) {
+                throw new IllegalArgumentException("CraftResultsDeprecated must contain at least one result item");
+            }
+            for (BedrockItem result : results) {
+                if (result == null || result.isEmpty()) {
+                    throw new IllegalArgumentException("CraftResultsDeprecated cannot contain an empty item");
+                }
+            }
+            validateCraftCount(timesCrafted);
+        }
+
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.CraftResults;
@@ -159,58 +149,17 @@ public final class InventoryStackRequest {
         public int mappedType() {
             return 17;
         }
+    }
 
-        @Override
-        public void write(final PacketWrapper request) {
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, this.results.size());
-            for (BedrockItem result : this.results) {
-                writeCraftResult(request, result);
-            }
-            request.write(Types.BYTE, (byte) this.timesCrafted);
+    private static void validateStackCount(final int count) {
+        if (count < 1 || count > 64) {
+            throw new IllegalArgumentException("Inventory action count must be between 1 and 64: " + count);
         }
     }
 
-    private static void writeCraftResult(final PacketWrapper request, final BedrockItem item) {
-        if (item.isEmpty()) {
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // invalid descriptor
-            request.write(Types.BYTE, (byte) 0); // Cereal variant discriminator
-            request.write(BedrockTypes.SHORT_LE, (short) 0);
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, 0);
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, 0);
-            return;
-        }
-
-        final String identifier = request.user().get(ItemRewriter.class).getItems().inverse().get(item.identifier());
-        if (identifier == null) {
-            throw new IllegalArgumentException("Unknown Bedrock crafting result runtime id: " + item.identifier());
-        }
-
-        request.write(BedrockTypes.UNSIGNED_VAR_INT, 1); // default descriptor
-        request.write(Types.BYTE, (byte) 1); // Cereal variant discriminator
-        request.write(BedrockTypes.STRING, identifier);
-        request.write(BedrockTypes.VAR_INT, (int) item.data());
-        request.write(BedrockTypes.SHORT_LE, (short) item.amount());
-        request.write(BedrockTypes.UNSIGNED_VAR_INT, item.blockRuntimeId());
-
-        final ByteBuf userData = request.user().getChannel().alloc().buffer();
-        try {
-            if (item.tag() != null) {
-                userData.writeShortLE(-1);
-                userData.writeByte(1);
-                BedrockTypes.TAG_LE.write(userData, item.tag());
-            } else {
-                userData.writeShortLE(0);
-            }
-            BedrockTypes.UTF8_STRING_ARRAY.write(userData, item.canPlace());
-            BedrockTypes.UTF8_STRING_ARRAY.write(userData, item.canBreak());
-            if ("minecraft:shield".equals(identifier)) {
-                userData.writeLongLE(item.blockingTicks());
-            }
-
-            request.write(BedrockTypes.UNSIGNED_VAR_INT, userData.readableBytes());
-            request.write(Types.REMAINING_BYTES, ByteBufUtil.getBytes(userData));
-        } finally {
-            userData.release();
+    private static void validateCraftCount(final int count) {
+        if (count < 1 || count > 255) {
+            throw new IllegalArgumentException("Craft count must fit a non-zero unsigned byte: " + count);
         }
     }
 }

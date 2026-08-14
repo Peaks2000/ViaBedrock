@@ -141,7 +141,7 @@ public abstract class Container {
         this.snapshot(snapshots, destination.container());
         final List<InventoryStackRequest.Action> actions = new ArrayList<>();
         actions.add(new InventoryStackRequest.CraftRecipe(recipe.networkId(), 1));
-        actions.add(new InventoryStackRequest.CraftResults(List.of(output.copy()), 1));
+        actions.add(new InventoryStackRequest.CraftResultsDeprecated(List.of(output.copy()), 1));
         for (CraftingRecipeStorage.ConsumedSlot consumed : recipe.consumedSlots()) {
             final BedrockItem ingredient = hud.getItem(consumed.slot());
             actions.add(new InventoryStackRequest.Consume(consumed.count(), this.requestSlot(hud, consumed.slot(), ingredient)));
