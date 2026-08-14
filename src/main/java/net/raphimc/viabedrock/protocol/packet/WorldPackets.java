@@ -49,7 +49,6 @@ import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.Dimension;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ServerboundLoadingScreenPacketType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SpawnPositionType;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SubChunkPacketPayload_HeightMapDataType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SubChunkPacketPayload_SubChunkRequestResult;
 import net.raphimc.viabedrock.protocol.data.enums.java.Relative;
 import net.raphimc.viabedrock.protocol.data.enums.java.RespawnKeepFlag;
@@ -206,23 +205,22 @@ public class WorldPackets {
                 return;
             }
             final int sectionCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // sub chunk count
-            if (sectionCount < -2) { // Bedrock client ignores this packet
+            if (sectionCount < 0) { // 1.26.40 replaced the negative request sentinels with an optional request limit
                 return;
             }
 
 
+            final boolean requestSubChunks = wrapper.read(Types.BOOLEAN);
             int subChunkLimit = -1;
-            if (wrapper.read(Types.BOOLEAN)) {
+            if (requestSubChunks) {
                 subChunkLimit = wrapper.read(BedrockTypes.VAR_INT);
             }
 
             final int startY = chunkTracker.getMinY() >> 4;
             final int endY = chunkTracker.getMaxY() >> 4;
             int requestSectionCount = 0;
-            /*if (sectionCount == -2) {
-                requestSectionCount = wrapper.read(BedrockTypes.UNSIGNED_SHORT_LE) + 1; // count
-            } else*/ if (sectionCount == -1) {
-                requestSectionCount = endY - startY;
+            if (requestSubChunks) {
+                requestSectionCount = subChunkLimit < 0 ? endY - startY : Math.min(subChunkLimit, endY - startY - 1) + 1;
             }
 
             final BedrockChunk previousChunk = chunkTracker.getChunk(chunkX, chunkZ);
@@ -233,11 +231,11 @@ public class WorldPackets {
                 }
             }
 
-            final BedrockChunk chunk = chunkTracker.createChunk(chunkX, chunkZ, sectionCount < 0 ? requestSectionCount : sectionCount);
+            final BedrockChunk chunk = chunkTracker.createChunk(chunkX, chunkZ, sectionCount);
             if (chunk == null) {
                 return;
             }
-            chunk.setRequestSubChunks(sectionCount < 0);
+            chunk.setRequestSubChunks(requestSubChunks);
 
             final int fRequestSectionCount = requestSectionCount;
             final Consumer<byte[]> dataConsumer = combinedData -> {
@@ -294,13 +292,10 @@ public class WorldPackets {
                 }
             };
 
-            if (wrapper.read(Types.BOOLEAN)) { // caching enabled
-                final Long[] blobs = wrapper.read(BedrockTypes.LONG_ARRAY); // blob ids
-                final int expectedLength = sectionCount < 0 ? 1 : sectionCount + 1;
-                if (blobs.length != expectedLength) { // Bedrock client writes random memory contents into the request and most likely crashes
-                    throw new IllegalStateException("Invalid blob count: " + blobs.length + " (expected " + expectedLength + ")");
-                }
-                final byte[] data = wrapper.read(BedrockTypes.BYTE_ARRAY); // data
+            final boolean cachingEnabled = wrapper.read(Types.BOOLEAN); // caching enabled
+            final Long[] blobs = wrapper.read(BedrockTypes.LONG_ARRAY); // cache metadata (always present since 1.26.40)
+            final byte[] data = wrapper.read(BedrockTypes.BYTE_ARRAY); // data
+            if (cachingEnabled) {
                 wrapper.user().get(BlobCache.class).getBlob(blobs).thenAccept(blob -> {
                     final byte[] combinedData = new byte[data.length + blob.length];
                     System.arraycopy(blob, 0, combinedData, 0, blob.length);
@@ -308,7 +303,7 @@ public class WorldPackets {
                     dataConsumer.accept(combinedData);
                 });
             } else {
-                dataConsumer.accept(wrapper.read(BedrockTypes.BYTE_ARRAY)); // data
+                dataConsumer.accept(data);
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.SUB_CHUNK, null, wrapper -> {
@@ -320,26 +315,26 @@ public class WorldPackets {
             if (dimension != chunkTracker.getDimension()) {
                 return;
             }
-            final BlockPosition center = wrapper.read(BedrockTypes.BLOCK_POSITION); // center position
-            final long count = wrapper.read(BedrockTypes.UNSIGNED_INT_LE); // count
+            final BlockPosition center = new BlockPosition(
+                wrapper.read(BedrockTypes.INT_LE),
+                wrapper.read(BedrockTypes.INT_LE),
+                wrapper.read(BedrockTypes.INT_LE)
+            ); // center position
+            final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // count
 
-            for (long i = 0; i < count; i++) {
+            for (int i = 0; i < count; i++) {
                 final BlockPosition offset = wrapper.read(BedrockTypes.SUB_CHUNK_OFFSET); // offset
                 final SubChunkPacketPayload_SubChunkRequestResult result = SubChunkPacketPayload_SubChunkRequestResult.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_SubChunkRequestResult.Undefined); // result
-                byte[] data;
-                if (wrapper.read(Types.BOOLEAN) && (result != SubChunkPacketPayload_SubChunkRequestResult.SuccessAllAir || !cachingEnabled)) {
-                    data = wrapper.read(BedrockTypes.BYTE_ARRAY);
-                } else {
-                    data = new byte[0];
-                }
-                final SubChunkPacketPayload_HeightMapDataType heightmapResult = SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // heightmap result
-                if (wrapper.read(Types.BOOLEAN) && heightmapResult == SubChunkPacketPayload_HeightMapDataType.HasData) {
+                final byte[] data = wrapper.read(Types.BOOLEAN) ? wrapper.read(BedrockTypes.BYTE_ARRAY) : new byte[0]; // data
+                wrapper.read(Types.BYTE); // heightmap result
+                if (wrapper.read(Types.BOOLEAN)) {
                     wrapper.read(new ByteArrayType(256)); // heightmap data
                 }
-                final SubChunkPacketPayload_HeightMapDataType renderHeightmapResult = SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // render heightmap result
-                if (wrapper.read(Types.BOOLEAN) && renderHeightmapResult == SubChunkPacketPayload_HeightMapDataType.HasData) {
+                wrapper.read(Types.BYTE); // render heightmap result
+                if (wrapper.read(Types.BOOLEAN)) {
                     wrapper.read(new ByteArrayType(256)); // render heightmap data
                 }
+                final Long blobId = wrapper.read(Types.BOOLEAN) ? wrapper.read(BedrockTypes.LONG_LE) : null; // blob id
 
                 final BlockPosition absolute = new BlockPosition(center.x() + offset.x(), center.y() + offset.y(), center.z() + offset.z());
                 final Consumer<byte[]> dataConsumer = combinedData -> {
@@ -378,9 +373,8 @@ public class WorldPackets {
                     }
                 };
 
-                if (wrapper.read(Types.BOOLEAN) && cachingEnabled) {
-                    final long hash = wrapper.read(BedrockTypes.LONG_LE); // blob id
-                    wrapper.user().get(BlobCache.class).getBlob(hash).thenAccept(blob -> {
+                if (blobId != null && cachingEnabled) {
+                    wrapper.user().get(BlobCache.class).getBlob(blobId).thenAccept(blob -> {
                         if (data.length == 0) {
                             dataConsumer.accept(blob);
                         } else if (blob.length == 0) {
