@@ -21,6 +21,7 @@ import com.viaversion.viaversion.api.connection.StorableObject;
 import net.raphimc.viabedrock.api.util.Jwt;
 
 import java.security.KeyPair;
+import java.util.Objects;
 import java.util.UUID;
 
 public class AuthData implements StorableObject {
@@ -33,6 +34,7 @@ public class AuthData implements StorableObject {
     private UUID selfSignedId;
     private Long clientRandomId;
     private String skinJwt;
+    private String clientHostedNonce;
 
     public AuthData(final String multiplayerToken, final KeyPair sessionKeyPair) {
         this.multiplayerToken = multiplayerToken;
@@ -83,6 +85,27 @@ public class AuthData implements StorableObject {
 
     public void setSkinJwt(final String skinJwt) {
         this.skinJwt = skinJwt;
+    }
+
+    /**
+     * Returns the one-time secret issued by a client-hosted game's Xbox multiplayer session.
+     * When present, the signed client data contains it as the {@code Nonce} claim while the
+     * regular multiplayer token continues to authenticate the Xbox account.
+     */
+    public String getClientHostedNonce() {
+        return this.clientHostedNonce;
+    }
+
+    public void setClientHostedNonce(final String clientHostedNonce) {
+        if (clientHostedNonce != null && clientHostedNonce.isBlank()) {
+            throw new IllegalArgumentException("Client-hosted nonce must not be blank");
+        }
+        if (!Objects.equals(this.clientHostedNonce, clientHostedNonce)) {
+            // The signed skin/client-data JWT contains this claim and must be regenerated if a
+            // connection object is reused for a different client-hosted session.
+            this.skinJwt = null;
+        }
+        this.clientHostedNonce = clientHostedNonce;
     }
 
     public String getDisplayName() {

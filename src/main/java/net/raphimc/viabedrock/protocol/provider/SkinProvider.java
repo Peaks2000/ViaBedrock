@@ -92,6 +92,11 @@ public class SkinProvider implements Provider {
             claims.put("SelfSignedId", authData.getSelfSignedId());
             claims.put("IsEditorMode", false);
             claims.put("FilterProfanity", false);
+            if (authData.getClientHostedNonce() != null) {
+                // Client-hosted games publish a one-time per-player secret through their
+                // Xbox multiplayer session and validate it from the signed client data.
+                claims.put("Nonce", authData.getClientHostedNonce());
+            }
         }
         { // Device claims
             claims.put("DeviceId", authData.getDeviceId().toString().replace("-", ""));
