@@ -113,6 +113,52 @@ public class InventoryContainer extends Container {
         return this.getItem(this.selectedHotbarSlot);
     }
 
+    /**
+     * Mirrors Bedrock's local pickup prediction when the host does not send an
+     * InventorySlot packet. Existing stacks are filled before empty slots, and
+     * the selected hotbar slot is preferred when it can accept the item.
+     * Authoritative inventory packets may overwrite this state afterwards.
+     *
+     * @return the number of items inserted into the tracked inventory
+     */
+    public int predictPickup(final BedrockItem pickedUpItem) {
+        if (pickedUpItem.isEmpty()) return 0;
+
+        int remaining = pickedUpItem.amount();
+        final int maxStackSize = this.user.get(ItemRewriter.class).maxStackSize(pickedUpItem);
+        final int selectedSlot = Byte.toUnsignedInt(this.selectedHotbarSlot);
+
+        remaining = this.mergePickupIntoSlot(pickedUpItem, selectedSlot, remaining, maxStackSize);
+        for (int slot = 0; slot < this.items.length && remaining > 0; slot++) {
+            if (slot != selectedSlot) {
+                remaining = this.mergePickupIntoSlot(pickedUpItem, slot, remaining, maxStackSize);
+            }
+        }
+        for (int slot = 0; slot < this.items.length && remaining > 0; slot++) {
+            if (!this.items[slot].isEmpty()) continue;
+
+            final int inserted = Math.min(remaining, maxStackSize);
+            final BedrockItem newItem = pickedUpItem.copy();
+            newItem.setAmount(inserted);
+            this.items[slot] = newItem;
+            remaining -= inserted;
+        }
+        return pickedUpItem.amount() - remaining;
+    }
+
+    private int mergePickupIntoSlot(final BedrockItem pickedUpItem, final int slot, final int remaining, final int maxStackSize) {
+        final BedrockItem existingItem = this.items[slot];
+        if (existingItem.isEmpty() || existingItem.isDifferent(pickedUpItem) || existingItem.amount() >= maxStackSize) {
+            return remaining;
+        }
+
+        final int inserted = Math.min(remaining, maxStackSize - existingItem.amount());
+        final BedrockItem mergedItem = existingItem.copy();
+        mergedItem.setAmount(existingItem.amount() + inserted);
+        this.items[slot] = mergedItem;
+        return remaining - inserted;
+    }
+
     public void sendSelectedHotbarSlotToClient() {
         final PacketWrapper setHeldSlot = PacketWrapper.create(ClientboundPackets26_1.SET_HELD_SLOT, this.user);
         setHeldSlot.write(Types.VAR_INT, (int) this.selectedHotbarSlot);

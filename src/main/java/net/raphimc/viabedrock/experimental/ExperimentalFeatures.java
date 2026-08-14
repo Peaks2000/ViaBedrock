@@ -27,7 +27,6 @@ import com.viaversion.viaversion.libs.fastutil.longs.LongList;
 import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPackets26_1;
 import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ServerboundPackets26_1;
 import net.raphimc.viabedrock.ViaBedrock;
-import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.model.entity.Entity;
@@ -317,42 +316,6 @@ public class ExperimentalFeatures {
                     0
             );
         });
-        protocol.registerClientbound(ClientboundBedrockPackets.INVENTORY_TRANSACTION, null, wrapper -> {
-            final InventoryTransactionRewriter inventoryTransactionRewriter = wrapper.user().get(InventoryTransactionRewriter.class);
-            InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
-
-            wrapper.cancel();
-            BedrockInventoryTransaction inventoryTransaction = wrapper.read(inventoryTransactionRewriter.getInventoryTransactionType());
-
-            if (inventoryTransaction.legacyRequestId() != 0) {
-                // Ignore legacy inventory transactions for now
-                return;
-            }
-
-            if (inventoryTransaction.actions() != null && !inventoryTransaction.actions().isEmpty()) {
-                for (InventoryActionData action : inventoryTransaction.actions()) {
-                    if (action.source().type() == InventorySourceType.Container_Inventory) {
-                        Container container = inventoryTracker.getContainerClientbound((byte) action.source().containerId(), null, null);
-
-                        if (container != null) {
-                            container.setItem(action.slot(), action.toItem());
-                            PacketFactory.sendJavaContainerSetContent(wrapper.user(),  container);
-                        } else {
-                            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received inventory action for unknown container ID: " + action.source().containerId());
-                        }
-                    }
-                }
-            }
-
-            switch (inventoryTransaction.transactionType()) {
-                case NormalTransaction -> {
-                    break; // Nothing to do here for now
-                }
-                default -> {
-                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received unsupported inventory transaction type: " + inventoryTransaction.transactionType());
-                }
-            }
-        });
         protocol.registerClientbound(ClientboundBedrockPackets.SET_ENTITY_LINK, ClientboundPackets26_1.SET_PASSENGERS, wrapper -> {
             final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
 
@@ -606,7 +569,6 @@ public class ExperimentalFeatures {
     }
 
     public static void registerStorages(final UserConnection user) {
-        user.put(new InventoryTransactionRewriter(user));
         user.put(new MapTracker(user));
     }
 }

@@ -51,6 +51,8 @@ import java.util.logging.Level;
 
 public class InventoryTracker extends StoredObject {
 
+    private static final int PLAYER_PICKUP_REFRESH_DELAY_TICKS = 2;
+
     private final InventoryContainer inventoryContainer = new InventoryContainer(this.user());
     private final OffhandContainer offhandContainer = new OffhandContainer(this.user());
     private final ArmorContainer armorContainer = new ArmorContainer(this.user());
@@ -60,6 +62,7 @@ public class InventoryTracker extends StoredObject {
     private Container currentContainer = null;
     private Container pendingCloseContainer = null;
     private IntObjectPair<Form> currentForm = null;
+    private int playerPickupRefreshTicks;
 
     public InventoryTracker(final UserConnection user) {
         super(user);
@@ -143,6 +146,10 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void tick() {
+        if (this.playerPickupRefreshTicks > 0 && --this.playerPickupRefreshTicks == 0) {
+            PacketFactory.sendJavaContainerSetContent(this.user(), this.inventoryContainer);
+        }
+
         if (this.currentContainer != null && this.currentContainer.position() != null) {
             if (this.currentContainer.type() == ContainerType.INVENTORY) return;
 
@@ -164,6 +171,12 @@ public class InventoryTracker extends StoredObject {
                 this.forceCloseCurrentContainer();
             }
         }
+    }
+
+    public void schedulePlayerPickupRefresh() {
+        // InventorySlot is authoritative and may arrive immediately before or after TakeItemActor.
+        // Coalesce nearby pickups and publish the tracked state after both packets have been handled.
+        this.playerPickupRefreshTicks = PLAYER_PICKUP_REFRESH_DELAY_TICKS;
     }
 
     public boolean isContainerOpen() {

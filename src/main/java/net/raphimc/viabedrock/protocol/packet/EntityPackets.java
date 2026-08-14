@@ -33,6 +33,7 @@ import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.model.entity.CustomEntity;
 import net.raphimc.viabedrock.api.model.entity.Entity;
+import net.raphimc.viabedrock.api.model.entity.ItemEntity;
 import net.raphimc.viabedrock.api.model.entity.LivingEntity;
 import net.raphimc.viabedrock.api.resourcepack.definition.EntityDefinitions;
 import net.raphimc.viabedrock.api.util.MathUtil;
@@ -52,6 +53,7 @@ import net.raphimc.viabedrock.protocol.model.*;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
+import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
@@ -146,7 +148,7 @@ public class EntityPackets {
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
             wrapper.read(Types.BOOLEAN); // from fishing
 
-            final Entity entity = entityTracker.addEntity(entityUniqueId, entityRuntimeId, "minecraft:item", EntityTypes26_2.ITEM);
+            final ItemEntity entity = entityTracker.addItemEntity(entityUniqueId, entityRuntimeId, item);
             entity.setPosition(position);
 
             wrapper.write(Types.VAR_INT, entity.javaId()); // entity id
@@ -636,9 +638,18 @@ public class EntityPackets {
                 wrapper.cancel();
                 return;
             }
+            int collectedAmount = 0;
+            if (collectorEntityRuntimeId == entityTracker.getClientPlayer().runtimeId() && itemEntity instanceof ItemEntity droppedItem) {
+                final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
+                collectedAmount = inventoryTracker.getInventoryContainer().predictPickup(droppedItem.item());
+                droppedItem.removeAmount(collectedAmount);
+                inventoryTracker.schedulePlayerPickupRefresh();
+            } else if (itemEntity instanceof ItemEntity droppedItem) {
+                collectedAmount = droppedItem.item().amount();
+            }
             wrapper.write(Types.VAR_INT, itemEntity.javaId()); // item entity id
             wrapper.write(Types.VAR_INT, collectorEntity.javaId()); // collector entity id
-            wrapper.write(Types.VAR_INT, 0); // amount
+            wrapper.write(Types.VAR_INT, collectedAmount); // amount
         });
     }
 

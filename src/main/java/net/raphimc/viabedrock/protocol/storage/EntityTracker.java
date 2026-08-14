@@ -36,6 +36,7 @@ import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.api.model.entity.*;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
+import net.raphimc.viabedrock.protocol.model.BedrockItem;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -68,6 +69,12 @@ public class EntityTracker extends StoredObject {
         } else {
             return this.addEntity(new Entity(this.user(), uniqueId, runtimeId, type, this.getNextJavaEntityId(), javaUuid, javaType));
         }
+    }
+
+    public ItemEntity addItemEntity(final long uniqueId, final long runtimeId, final BedrockItem item) {
+        return this.addEntity(new ItemEntity(
+                this.user(), uniqueId, runtimeId, this.getNextJavaEntityId(), UUID.randomUUID(), item
+        ));
     }
 
     public <T extends Entity> T addEntity(final T entity) {
