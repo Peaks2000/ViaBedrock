@@ -80,6 +80,9 @@ import net.raphimc.viabedrock.protocol.storage.*;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.logging.Level;
 
 public class InventoryPackets {
@@ -202,6 +205,75 @@ public class InventoryPackets {
                 wrapper.write(VersionedTypes.V26_2.item, container.getJavaItem(slot)); // item
             } else {
                 wrapper.cancel();
+            }
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.ITEM_STACK_RESPONSE, null, wrapper -> {
+            wrapper.cancel();
+            final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
+            final InventoryRequestTracker requestTracker = wrapper.user().get(InventoryRequestTracker.class);
+            final int responseCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+            for (int responseIndex = 0; responseIndex < responseCount; responseIndex++) {
+                final ItemStackNetResult result = ItemStackNetResult.getByValue(wrapper.read(Types.UNSIGNED_BYTE));
+                final int requestId = wrapper.read(BedrockTypes.VAR_INT);
+                final InventoryRequestTracker.PendingRequest pending = requestTracker.remove(requestId);
+                final Set<Container> correctedContainers = Collections.newSetFromMap(new IdentityHashMap<>());
+
+                final boolean containersFieldPresent = wrapper.read(Types.BOOLEAN);
+                final boolean containersPresent = containersFieldPresent && wrapper.read(Types.BOOLEAN);
+                if (containersPresent) {
+                    final int containerCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                    for (int containerIndex = 0; containerIndex < containerCount; containerIndex++) {
+                        final FullContainerName containerName = wrapper.read(BedrockTypes.FULL_CONTAINER_NAME);
+                        final int slotCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                        for (int slotIndex = 0; slotIndex < slotCount; slotIndex++) {
+                            wrapper.read(Types.UNSIGNED_BYTE); // requested slot
+                            final int slot = wrapper.read(Types.UNSIGNED_BYTE);
+                            final int amount = wrapper.read(Types.UNSIGNED_BYTE);
+                            Integer stackNetworkId = null;
+                            if (wrapper.read(Types.BOOLEAN) && wrapper.read(Types.BOOLEAN)) {
+                                stackNetworkId = wrapper.read(BedrockTypes.VAR_INT);
+                            }
+                            wrapper.read(BedrockTypes.STRING); // custom name
+                            wrapper.read(BedrockTypes.STRING); // filtered custom name
+                            wrapper.read(BedrockTypes.VAR_INT); // durability correction
+
+                            if (result == ItemStackNetResult.Success) {
+                                final Container container = inventoryTracker.getContainerFromName(containerName, slot);
+                                if (container == null || slot < 0 || slot >= container.size()) continue;
+                                final BedrockItem expected = container.getItem(slot);
+                                if (amount == 0) {
+                                    container.setItem(slot, BedrockItem.empty());
+                                    correctedContainers.add(container);
+                                } else if (!expected.isEmpty()) {
+                                    final BedrockItem corrected = expected.copy();
+                                    corrected.setAmount(amount);
+                                    if (stackNetworkId != null) corrected.setNetId(stackNetworkId);
+                                    container.setItem(slot, corrected);
+                                    correctedContainers.add(container);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (pending == null) {
+                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received item stack response for unknown request ID: " + requestId);
+                    continue;
+                }
+                if (result != ItemStackNetResult.Success) {
+                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Inventory request " + requestId + " failed: " + result);
+                    for (var entry : pending.snapshots().entrySet()) {
+                        entry.getKey().setItems(entry.getValue());
+                        correctedContainers.add(entry.getKey());
+                    }
+                }
+
+                for (Container container : correctedContainers) {
+                    if (container != inventoryTracker.getHudContainer()) {
+                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
+                    }
+                }
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.MODAL_FORM_REQUEST, ClientboundPackets26_1.SHOW_DIALOG, wrapper -> {

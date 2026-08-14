@@ -23,8 +23,10 @@ import com.viaversion.viaversion.api.type.Types;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
@@ -33,6 +35,11 @@ public class OffhandContainer extends InventorySubContainer {
 
     public OffhandContainer(final UserConnection user) {
         super(user, (byte) ContainerID.CONTAINER_ID_OFFHAND.getValue(), ContainerType.HAND, 1);
+    }
+
+    @Override
+    public FullContainerName getFullContainerName(final int slot) {
+        return new FullContainerName(ContainerEnumName.OffhandContainer, null);
     }
 
     @Override

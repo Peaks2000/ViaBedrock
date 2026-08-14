@@ -359,30 +359,51 @@ public class ExperimentalFeatures {
             final EntityLink linkType = wrapper.read(BedrockTypes.ENTITY_LINK);
             final Entity vehicle = entityTracker.getEntityByUid(linkType.fromEntityUniqueId());
             final Entity passenger = entityTracker.getEntityByUid(linkType.toEntityUniqueId());
+            if (vehicle == null || passenger == null) {
+                wrapper.cancel();
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+                    "Ignoring entity link for untracked entities: vehicle=" + linkType.fromEntityUniqueId()
+                        + ", passenger=" + linkType.toEntityUniqueId());
+                return;
+            }
 
             // TODO: Handle Passenger type if needed
             switch (linkType.type()) {
                 case Riding, Passenger -> { // TODO: This needs to be ordered properly based on the link types (rider first, then passengers)
                     vehicle.addPassenger(passenger.uniqueId());
 
-                    wrapper.write(Types.VAR_INT, entityTracker.getEntityByUid(linkType.fromEntityUniqueId()).javaId()); // vehicle
-                    wrapper.write(Types.VAR_INT, vehicle.passengers().size()); // number of passengers
+                    final List<Integer> javaPassengers = new ArrayList<>();
                     for (long passengerUid : vehicle.passengers()) {
-                        wrapper.write(Types.VAR_INT, entityTracker.getEntityByUid(passengerUid).javaId()); // passenger id
+                        final Entity trackedPassenger = entityTracker.getEntityByUid(passengerUid);
+                        if (trackedPassenger != null) {
+                            javaPassengers.add(trackedPassenger.javaId());
+                        }
+                    }
+                    wrapper.write(Types.VAR_INT, vehicle.javaId()); // vehicle
+                    wrapper.write(Types.VAR_INT, javaPassengers.size()); // number of passengers
+                    for (int passengerId : javaPassengers) {
+                        wrapper.write(Types.VAR_INT, passengerId); // passenger id
                     }
 
                     if (passenger.uniqueId() == entityTracker.getClientPlayer().uniqueId()) { // TODO: This could be applied to all passengers not just players
                         // The player is now riding an entity, update the state
-                        entityTracker.getClientPlayer().setMountEntityRId(entityTracker.getEntityByUid(linkType.fromEntityUniqueId()).runtimeId());
+                        entityTracker.getClientPlayer().setMountEntityRId(vehicle.runtimeId());
                     }
                 }
                 case None -> { // Remove
                     vehicle.removePassenger(passenger.uniqueId());
 
-                    wrapper.write(Types.VAR_INT, vehicle.javaId()); // vehicle
-                    wrapper.write(Types.VAR_INT, vehicle.passengers().size()); // number of passengers
+                    final List<Integer> javaPassengers = new ArrayList<>();
                     for (long passengerUid : vehicle.passengers()) {
-                        wrapper.write(Types.VAR_INT, entityTracker.getEntityByUid(passengerUid).javaId()); // passenger id
+                        final Entity trackedPassenger = entityTracker.getEntityByUid(passengerUid);
+                        if (trackedPassenger != null) {
+                            javaPassengers.add(trackedPassenger.javaId());
+                        }
+                    }
+                    wrapper.write(Types.VAR_INT, vehicle.javaId()); // vehicle
+                    wrapper.write(Types.VAR_INT, javaPassengers.size()); // number of passengers
+                    for (int passengerId : javaPassengers) {
+                        wrapper.write(Types.VAR_INT, passengerId); // passenger id
                     }
 
                     if (passenger.uniqueId() == entityTracker.getClientPlayer().uniqueId()) {// TODO: This could be applied to all passengers not just players

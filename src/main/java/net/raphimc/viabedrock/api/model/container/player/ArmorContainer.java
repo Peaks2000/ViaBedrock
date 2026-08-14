@@ -19,12 +19,19 @@ package net.raphimc.viabedrock.api.model.container.player;
 
 import com.viaversion.viaversion.api.connection.UserConnection;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
 
 public class ArmorContainer extends InventorySubContainer {
 
     public ArmorContainer(final UserConnection user) {
         super(user, (byte) ContainerID.CONTAINER_ID_ARMOR.getValue(), ContainerType.ARMOR, 4);
+    }
+
+    @Override
+    public FullContainerName getFullContainerName(final int slot) {
+        return new FullContainerName(ContainerEnumName.ArmorContainer, null);
     }
 
     @Override

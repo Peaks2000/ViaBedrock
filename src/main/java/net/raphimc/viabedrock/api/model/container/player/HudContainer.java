@@ -19,13 +19,25 @@ package net.raphimc.viabedrock.api.model.container.player;
 
 import com.viaversion.viaversion.api.connection.UserConnection;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
 
 public class HudContainer extends InventoryRedirectContainer {
 
     public HudContainer(final UserConnection user) {
         super(user, (byte) ContainerID.CONTAINER_ID_PLAYER_ONLY_UI.getValue(), ContainerType.HUD, 54);
+    }
+
+    @Override
+    public FullContainerName getFullContainerName(final int slot) {
+        if (slot >= 28 && slot <= 31) {
+            return new FullContainerName(ContainerEnumName.CraftingInputContainer, null);
+        } else if (slot == 50) {
+            return new FullContainerName(ContainerEnumName.CraftingOutputPreviewContainer, null);
+        }
+        return new FullContainerName(ContainerEnumName.CursorContainer, null);
     }
 
     @Override

@@ -22,12 +22,22 @@ import com.viaversion.viaversion.api.minecraft.BlockPosition;
 import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.libs.mcstructs.text.TextComponent;
 import net.raphimc.viabedrock.ViaBedrock;
+import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
+import net.raphimc.viabedrock.protocol.model.InventoryStackRequest;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
+import net.raphimc.viabedrock.protocol.storage.InventoryRequestTracker;
+import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 
@@ -62,7 +72,238 @@ public abstract class Container {
     }
 
     public boolean handleClick(final int revision, final short slot, final byte button, final ContainerInput action) {
-        return false;
+        if (slot == -1) {
+            return false;
+        }
+
+        final InventoryTracker inventoryTracker = this.user.get(InventoryTracker.class);
+        final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
+        this.snapshot(snapshots, inventoryTracker.getHudContainer());
+
+        final List<InventoryStackRequest.Action> actions = switch (action) {
+            case PICKUP -> this.singleton(this.handlePickup(slot, button, inventoryTracker, snapshots));
+            case SWAP -> this.singleton(this.handleHotbarSwap(slot, button, inventoryTracker, snapshots));
+            case QUICK_MOVE -> this.handleQuickMove(slot, inventoryTracker, snapshots);
+            case THROW -> this.singleton(this.handleThrow(slot, button, inventoryTracker, snapshots));
+            default -> List.of();
+        };
+        if (actions.isEmpty()) {
+            return false;
+        }
+
+        this.user.get(InventoryRequestTracker.class).send(actions, snapshots);
+        return true;
+    }
+
+    private InventoryStackRequest.Action handlePickup(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+        final Container cursor = tracker.getHudContainer();
+        final BedrockItem cursorItem = cursor.getItem(0);
+        if (javaSlot == -999) {
+            if (cursorItem.isEmpty()) return null;
+            final int count = button == 0 ? cursorItem.amount() : 1;
+            cursor.setItem(0, this.withRemovedAmount(cursorItem, count));
+            return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, cursorItem), false);
+        }
+
+        final SlotRef target = this.resolveJavaSlot(javaSlot, tracker);
+        if (target == null) return null;
+        final BedrockItem targetItem = target.container().getItem(target.slot());
+        if (cursorItem.isEmpty() && targetItem.isEmpty()) return null;
+
+        this.snapshot(snapshots, target.container());
+        if (cursorItem.isEmpty()) {
+            final int count = button == 0 ? targetItem.amount() : (targetItem.amount() + 1) / 2;
+            cursor.setItem(0, this.withAmount(targetItem, count));
+            target.container().setItem(target.slot(), this.withRemovedAmount(targetItem, count));
+            return new InventoryStackRequest.Take(
+                count,
+                this.requestSlot(target.container(), target.slot(), targetItem),
+                this.requestSlot(cursor, 0, BedrockItem.empty())
+            );
+        }
+
+        if (targetItem.isEmpty() || !targetItem.isDifferent(cursorItem)) {
+            final int capacity = targetItem.isEmpty() ? 64 : 64 - targetItem.amount();
+            final int requested = button == 0 ? cursorItem.amount() : 1;
+            final int count = Math.min(capacity, requested);
+            if (count <= 0) return null;
+
+            final BedrockItem placed = targetItem.isEmpty() ? this.withAmount(cursorItem, count) : this.withAmount(targetItem, targetItem.amount() + count);
+            target.container().setItem(target.slot(), placed);
+            cursor.setItem(0, this.withRemovedAmount(cursorItem, count));
+            return new InventoryStackRequest.Place(
+                count,
+                this.requestSlot(cursor, 0, cursorItem),
+                this.requestSlot(target.container(), target.slot(), targetItem)
+            );
+        }
+
+        cursor.setItem(0, targetItem.copy());
+        target.container().setItem(target.slot(), cursorItem.copy());
+        return new InventoryStackRequest.Swap(
+            this.requestSlot(cursor, 0, cursorItem),
+            this.requestSlot(target.container(), target.slot(), targetItem)
+        );
+    }
+
+    private InventoryStackRequest.Action handleHotbarSwap(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+        if (button < 0 || button > 8) return null;
+        final SlotRef target = this.resolveJavaSlot(javaSlot, tracker);
+        if (target == null) return null;
+
+        final InventoryContainer inventory = tracker.getInventoryContainer();
+        final int hotbarSlot = button;
+        if (target.container() == inventory && target.slot() == hotbarSlot) return null;
+
+        final BedrockItem targetItem = target.container().getItem(target.slot());
+        final BedrockItem hotbarItem = inventory.getItem(hotbarSlot);
+        if (targetItem.isEmpty() && hotbarItem.isEmpty()) return null;
+
+        this.snapshot(snapshots, target.container());
+        this.snapshot(snapshots, inventory);
+        target.container().setItem(target.slot(), hotbarItem.copy());
+        inventory.setItem(hotbarSlot, targetItem.copy());
+
+        if (hotbarItem.isEmpty()) {
+            return new InventoryStackRequest.Place(
+                targetItem.amount(),
+                this.requestSlot(target.container(), target.slot(), targetItem),
+                this.requestSlot(inventory, hotbarSlot, hotbarItem)
+            );
+        } else if (targetItem.isEmpty()) {
+            return new InventoryStackRequest.Place(
+                hotbarItem.amount(),
+                this.requestSlot(inventory, hotbarSlot, hotbarItem),
+                this.requestSlot(target.container(), target.slot(), targetItem)
+            );
+        }
+        return new InventoryStackRequest.Swap(
+            this.requestSlot(inventory, hotbarSlot, hotbarItem),
+            this.requestSlot(target.container(), target.slot(), targetItem)
+        );
+    }
+
+    private InventoryStackRequest.Action handleThrow(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+        if (javaSlot == -999) {
+            final Container cursor = tracker.getHudContainer();
+            final BedrockItem item = cursor.getItem(0);
+            if (item.isEmpty()) return null;
+            final int count = button == 0 ? 1 : item.amount();
+            cursor.setItem(0, this.withRemovedAmount(item, count));
+            return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, item), false);
+        }
+
+        final SlotRef source = this.resolveJavaSlot(javaSlot, tracker);
+        if (source == null) return null;
+        final BedrockItem item = source.container().getItem(source.slot());
+        if (item.isEmpty()) return null;
+
+        this.snapshot(snapshots, source.container());
+        final int count = button == 0 ? 1 : item.amount();
+        source.container().setItem(source.slot(), this.withRemovedAmount(item, count));
+        return new InventoryStackRequest.Drop(count, this.requestSlot(source.container(), source.slot(), item), false);
+    }
+
+    private List<InventoryStackRequest.Action> handleQuickMove(final short javaSlot, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+        final SlotRef source = this.resolveJavaSlot(javaSlot, tracker);
+        if (source == null) return List.of();
+        BedrockItem sourceItem = source.container().getItem(source.slot());
+        if (sourceItem.isEmpty()) return List.of();
+
+        final List<SlotRef> destinations = new ArrayList<>();
+        final InventoryContainer inventory = tracker.getInventoryContainer();
+        if (this instanceof InventoryContainer) {
+            if (source.container() == inventory && source.slot() >= 9) {
+                for (int slot = 0; slot < 9; slot++) destinations.add(new SlotRef(inventory, slot));
+            } else {
+                for (int slot = 9; slot < inventory.size(); slot++) destinations.add(new SlotRef(inventory, slot));
+            }
+        } else if (source.container() == this) {
+            for (int slot = 9; slot < inventory.size(); slot++) destinations.add(new SlotRef(inventory, slot));
+            for (int slot = 0; slot < 9; slot++) destinations.add(new SlotRef(inventory, slot));
+        } else {
+            for (int slot = 0; slot < this.size(); slot++) destinations.add(new SlotRef(this, slot));
+        }
+
+        final List<InventoryStackRequest.Action> actions = new ArrayList<>();
+        for (boolean merge : new boolean[]{true, false}) {
+            for (SlotRef destination : destinations) {
+                if (sourceItem.isEmpty()) break;
+                if (destination.container() == source.container() && destination.slot() == source.slot()) continue;
+                final BedrockItem destinationItem = destination.container().getItem(destination.slot());
+                if (merge) {
+                    if (destinationItem.isEmpty() || destinationItem.isDifferent(sourceItem) || destinationItem.amount() >= 64) continue;
+                } else if (!destinationItem.isEmpty()) {
+                    continue;
+                }
+
+                final int count = Math.min(sourceItem.amount(), merge ? 64 - destinationItem.amount() : 64);
+                if (count <= 0) continue;
+                this.snapshot(snapshots, source.container());
+                this.snapshot(snapshots, destination.container());
+                actions.add(new InventoryStackRequest.Place(
+                    count,
+                    this.requestSlot(source.container(), source.slot(), sourceItem),
+                    this.requestSlot(destination.container(), destination.slot(), destinationItem)
+                ));
+
+                final BedrockItem moved = destinationItem.isEmpty()
+                    ? this.withAmount(sourceItem, count)
+                    : this.withAmount(destinationItem, destinationItem.amount() + count);
+                destination.container().setItem(destination.slot(), moved);
+                sourceItem = this.withRemovedAmount(sourceItem, count);
+                source.container().setItem(source.slot(), sourceItem);
+            }
+        }
+        return actions;
+    }
+
+    private SlotRef resolveJavaSlot(final int javaSlot, final InventoryTracker tracker) {
+        if (javaSlot < 0) return null;
+        if (this instanceof InventoryContainer) {
+            if (javaSlot >= 5 && javaSlot < 9) {
+                return new SlotRef(tracker.getArmorContainer(), javaSlot - 5);
+            } else if (javaSlot == 45) {
+                return new SlotRef(tracker.getOffhandContainer(), 0);
+            } else if (javaSlot >= 9 && javaSlot < 45) {
+                return new SlotRef(tracker.getInventoryContainer(), tracker.getInventoryContainer().bedrockSlot(javaSlot));
+            }
+            return null; // crafting slots require recipe actions
+        }
+
+        if (javaSlot < this.size()) {
+            return new SlotRef(this, this.bedrockSlot(javaSlot));
+        }
+        final int inventoryJavaSlot = javaSlot - this.size() + 9;
+        if (inventoryJavaSlot >= 9 && inventoryJavaSlot < 45) {
+            return new SlotRef(tracker.getInventoryContainer(), tracker.getInventoryContainer().bedrockSlot(inventoryJavaSlot));
+        }
+        return null;
+    }
+
+    private void snapshot(final Map<Container, BedrockItem[]> snapshots, final Container container) {
+        snapshots.computeIfAbsent(container, ignored -> container.getItems());
+    }
+
+    private InventoryStackRequest.Slot requestSlot(final Container container, final int slot, final BedrockItem item) {
+        return new InventoryStackRequest.Slot(container.getFullContainerName(slot), slot, item.netId() != null ? item.netId() : 0);
+    }
+
+    private List<InventoryStackRequest.Action> singleton(final InventoryStackRequest.Action action) {
+        return action != null ? List.of(action) : List.of();
+    }
+
+    private BedrockItem withAmount(final BedrockItem item, final int amount) {
+        final BedrockItem copy = item.copy();
+        copy.setAmount(amount);
+        return copy;
+    }
+
+    private BedrockItem withRemovedAmount(final BedrockItem item, final int amount) {
+        return amount >= item.amount() ? BedrockItem.empty() : this.withAmount(item, item.amount() - amount);
+    }
+
+    private record SlotRef(Container container, int slot) {
     }
 
     public void clearItems() {
@@ -113,6 +354,14 @@ public abstract class Container {
 
     public int javaSlot(final int slot) {
         return slot;
+    }
+
+    public int bedrockSlot(final int slot) {
+        return slot;
+    }
+
+    public FullContainerName getFullContainerName(final int slot) {
+        return new FullContainerName(ContainerEnumName.LevelEntityContainer, null);
     }
 
     public byte javaContainerId() {

@@ -91,6 +91,18 @@ public class InventoryTracker extends StoredObject {
         return null;
     }
 
+    public Container getContainerFromName(final FullContainerName containerName, final int slot) {
+        if (containerName == null || containerName.name() == null) return null;
+        return switch (containerName.name()) {
+            case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> this.inventoryContainer;
+            case OffhandContainer -> this.offhandContainer;
+            case ArmorContainer -> this.armorContainer;
+            case CursorContainer, CraftingInputContainer, CraftingOutputPreviewContainer -> this.hudContainer;
+            case DynamicContainer -> this.dynamicContainerRegistry.get(containerName);
+            default -> this.currentContainer != null && containerName.equals(this.currentContainer.getFullContainerName(slot)) ? this.currentContainer : null;
+        };
+    }
+
     public BundleContainer getDynamicContainer(final FullContainerName containerName) {
         return this.dynamicContainerRegistry.get(containerName);
     }

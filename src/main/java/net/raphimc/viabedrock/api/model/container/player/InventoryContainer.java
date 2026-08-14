@@ -27,10 +27,12 @@ import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPack
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
@@ -85,6 +87,16 @@ public class InventoryContainer extends Container {
         } else {
             return super.javaSlot(slot);
         }
+    }
+
+    @Override
+    public int bedrockSlot(final int slot) {
+        return slot >= 36 && slot < 45 ? slot - 36 : slot;
+    }
+
+    @Override
+    public FullContainerName getFullContainerName(final int slot) {
+        return new FullContainerName(slot < 9 ? ContainerEnumName.HotbarContainer : ContainerEnumName.InventoryContainer, null);
     }
 
     @Override
