@@ -64,6 +64,7 @@ public class InventoryContainer extends Container {
         System.arraycopy(inventoryItems, 9, combinedItems, 9, 27);
         System.arraycopy(inventoryItems, 0, combinedItems, 36, 9);
         System.arraycopy(offhandItems, 0, combinedItems, 45, offhandItems.length);
+        combinedItems[0] = hudContainer.getJavaItem(50);
         for (int i = 0; i < 4; i++) {
             combinedItems[1 + i] = hudContainer.getJavaItem(28 + i);
         }

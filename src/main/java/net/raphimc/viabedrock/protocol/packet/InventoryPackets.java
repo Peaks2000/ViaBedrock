@@ -60,6 +60,7 @@ import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
 import net.raphimc.viabedrock.api.model.container.ChestContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
+import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
@@ -127,6 +128,7 @@ public class InventoryPackets {
                     return;
                 }
                 case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position, 27);
+                case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"));
                 case NONE, CAULDRON, JUKEBOX, ARMOR, HAND, HUD, DECORATED_POT -> { // Bedrock client can't open these containers
                     wrapper.cancel();
                     return;
@@ -179,7 +181,10 @@ public class InventoryPackets {
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
             if (container != null && container.setItems(items)) {
-                PacketFactory.writeJavaContainerSetContent(wrapper, container);
+                final Container javaContainer = container.type() == ContainerType.HUD && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer
+                    ? inventoryTracker.getCurrentContainer()
+                    : container;
+                PacketFactory.writeJavaContainerSetContent(wrapper, javaContainer);
             } else {
                 wrapper.cancel();
             }
@@ -198,14 +203,23 @@ public class InventoryPackets {
                 if (container.type() == ContainerType.HUD && slot == 0) { // cursor item
                     wrapper.setPacketType(ClientboundPackets26_1.SET_CURSOR_ITEM);
                 } else {
-                    wrapper.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
+                    final Container javaContainer = container.type() == ContainerType.HUD
+                        && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer
+                        && ((slot >= 32 && slot <= 40) || slot == 50)
+                        ? inventoryTracker.getCurrentContainer()
+                        : container;
+                    wrapper.write(Types.VAR_INT, (int) javaContainer.javaContainerId()); // container id
                     wrapper.write(Types.VAR_INT, 0); // revision
-                    wrapper.write(Types.SHORT, (short) container.javaSlot(slot)); // slot
+                    wrapper.write(Types.SHORT, (short) javaContainer.javaSlot(slot)); // slot
                 }
                 wrapper.write(VersionedTypes.V26_2.item, container.getJavaItem(slot)); // item
             } else {
                 wrapper.cancel();
             }
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, wrapper -> {
+            wrapper.cancel();
+            wrapper.user().get(CraftingRecipeStorage.class).read(wrapper);
         });
         protocol.registerClientbound(ClientboundBedrockPackets.ITEM_STACK_RESPONSE, null, wrapper -> {
             wrapper.cancel();
@@ -269,7 +283,9 @@ public class InventoryPackets {
                 }
 
                 for (Container container : correctedContainers) {
-                    if (container != inventoryTracker.getHudContainer()) {
+                    if (container == inventoryTracker.getHudContainer() && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer) {
+                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getCurrentContainer());
+                    } else if (container != inventoryTracker.getHudContainer()) {
                         PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
                     }
                 }

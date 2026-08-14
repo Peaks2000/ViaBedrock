@@ -97,7 +97,7 @@ public class InventoryTracker extends StoredObject {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> this.inventoryContainer;
             case OffhandContainer -> this.offhandContainer;
             case ArmorContainer -> this.armorContainer;
-            case CursorContainer, CraftingInputContainer, CraftingOutputPreviewContainer -> this.hudContainer;
+            case CursorContainer, CraftingInputContainer, CraftingOutputPreviewContainer, CreatedOutputContainer -> this.hudContainer;
             case DynamicContainer -> this.dynamicContainerRegistry.get(containerName);
             default -> this.currentContainer != null && containerName.equals(this.currentContainer.getFullContainerName(slot)) ? this.currentContainer : null;
         };
