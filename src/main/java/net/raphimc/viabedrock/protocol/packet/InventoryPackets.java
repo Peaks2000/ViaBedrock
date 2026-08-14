@@ -208,8 +208,11 @@ public class InventoryPackets {
                     // Bedrock sends authoritative player inventory changes (including item pickups) as
                     // individual slots. Refresh Java's combined player inventory so its hotbar, armor and
                     // offhand views all observe the same update, even while another screen is open.
-                    wrapper.setPacketType(ClientboundPackets26_1.CONTAINER_SET_CONTENT);
-                    PacketFactory.writeJavaContainerSetContent(wrapper, inventoryTracker.getInventoryContainer());
+                    // Send a fresh packet instead of changing the mapped slot packet's type in place. Some
+                    // protocol pipelines retain the original packet mapping during dispatch, which can make
+                    // the Java client decode or discard the rewritten full-content payload as a slot update.
+                    wrapper.cancel();
+                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                     return;
                 } else {
                     final Container javaContainer = container.type() == ContainerType.HUD
