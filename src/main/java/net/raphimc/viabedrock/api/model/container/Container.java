@@ -23,6 +23,7 @@ import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.libs.mcstructs.text.TextComponent;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
+import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
@@ -80,7 +81,7 @@ public abstract class Container {
         final InventoryTracker inventoryTracker = this.user.get(InventoryTracker.class);
         final InventoryRequestTracker requestTracker = this.user.get(InventoryRequestTracker.class);
         final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
-        return requestTracker.send(requestId -> {
+        final boolean handled = requestTracker.send(requestId -> {
             this.snapshot(snapshots, inventoryTracker.getHudContainer());
 
             if ((this instanceof InventoryContainer || this instanceof CraftingTableContainer) && slot == 0) {
@@ -96,6 +97,30 @@ public abstract class Container {
                 default -> List.of();
             };
         }, snapshots);
+        if (handled && this.isCraftingInputSlot(slot)) {
+            this.updateCraftingOutput(inventoryTracker);
+            PacketFactory.sendJavaContainerSetContent(this.user, this);
+        }
+        return handled;
+    }
+
+    private boolean isCraftingInputSlot(final int javaSlot) {
+        return (this instanceof InventoryContainer && javaSlot >= 1 && javaSlot <= 4)
+            || (this instanceof CraftingTableContainer && javaSlot >= 1 && javaSlot <= 9);
+    }
+
+    private void updateCraftingOutput(final InventoryTracker tracker) {
+        final int gridStart = this instanceof InventoryContainer ? 28 : 32;
+        final int gridWidth = this instanceof InventoryContainer ? 2 : 3;
+        final BedrockItem[] gridItems = new BedrockItem[gridWidth * gridWidth];
+        final int[] gridSlots = new int[gridItems.length];
+        for (int i = 0; i < gridItems.length; i++) {
+            gridSlots[i] = gridStart + i;
+            gridItems[i] = tracker.getHudContainer().getItem(gridSlots[i]);
+        }
+
+        final CraftingRecipeStorage.Match recipe = this.user.get(CraftingRecipeStorage.class).find(gridItems, gridSlots, gridWidth);
+        tracker.getHudContainer().setItem(50, recipe != null ? recipe.output() : BedrockItem.empty());
     }
 
     private List<InventoryStackRequest.Action> handleCrafting(final byte button, final ContainerInput action,
@@ -409,14 +434,18 @@ public abstract class Container {
     private SlotRef resolveJavaSlot(final int javaSlot, final InventoryTracker tracker) {
         if (javaSlot < 0) return null;
         if (this instanceof InventoryContainer) {
-            if (javaSlot >= 5 && javaSlot < 9) {
+            if (javaSlot >= 1 && javaSlot < 5) {
+                // Java exposes the player crafting grid as slots 1-4, while Bedrock
+                // stores it in the player-only UI container at slots 28-31.
+                return new SlotRef(tracker.getHudContainer(), javaSlot + 27);
+            } else if (javaSlot >= 5 && javaSlot < 9) {
                 return new SlotRef(tracker.getArmorContainer(), javaSlot - 5);
             } else if (javaSlot == 45) {
                 return new SlotRef(tracker.getOffhandContainer(), 0);
             } else if (javaSlot >= 9 && javaSlot < 45) {
                 return new SlotRef(tracker.getInventoryContainer(), tracker.getInventoryContainer().bedrockSlot(javaSlot));
             }
-            return null; // crafting slots require recipe actions
+            return null; // crafting output requires recipe actions
         }
 
         if (javaSlot < this.size()) {

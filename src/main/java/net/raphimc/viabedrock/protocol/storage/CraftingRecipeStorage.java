@@ -52,14 +52,25 @@ public final class CraftingRecipeStorage extends StoredObject {
         for (Recipe recipe : this.recipes) {
             if (!sameItem(recipe.output(), output) || recipe.output().amount() != output.amount()) continue;
 
-            final List<ConsumedSlot> consumed = recipe.shaped()
-                ? this.matchShaped(recipe, gridItems, gridSlots, gridWidth)
-                : this.matchShapeless(recipe, gridItems, gridSlots);
-            if (consumed != null) {
-                return new Match(recipe.networkId(), consumed);
-            }
+            final Match match = this.match(recipe, gridItems, gridSlots, gridWidth);
+            if (match != null) return match;
         }
         return null;
+    }
+
+    public Match find(final BedrockItem[] gridItems, final int[] gridSlots, final int gridWidth) {
+        for (Recipe recipe : this.recipes) {
+            final Match match = this.match(recipe, gridItems, gridSlots, gridWidth);
+            if (match != null) return match;
+        }
+        return null;
+    }
+
+    private Match match(final Recipe recipe, final BedrockItem[] gridItems, final int[] gridSlots, final int gridWidth) {
+        final List<ConsumedSlot> consumed = recipe.shaped()
+            ? this.matchShaped(recipe, gridItems, gridSlots, gridWidth)
+            : this.matchShapeless(recipe, gridItems, gridSlots);
+        return consumed != null ? new Match(recipe.networkId(), recipe.output().copy(), consumed) : null;
     }
 
     private Recipe readShaped(final PacketWrapper wrapper, final ItemRewriter itemRewriter) {
@@ -260,6 +271,6 @@ public final class CraftingRecipeStorage extends StoredObject {
     public record ConsumedSlot(int slot, int count) {
     }
 
-    public record Match(int networkId, List<ConsumedSlot> consumedSlots) {
+    public record Match(int networkId, BedrockItem output, List<ConsumedSlot> consumedSlots) {
     }
 }
