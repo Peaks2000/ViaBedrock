@@ -24,6 +24,7 @@ import net.raphimc.viabedrock.protocol.types.inventory.InventoryStackRequestType
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 public final class InventoryRequestTracker extends StoredObject {
 
@@ -34,8 +35,12 @@ public final class InventoryRequestTracker extends StoredObject {
         super(user);
     }
 
-    public void send(final List<InventoryStackRequest.Action> actions, final Map<Container, BedrockItem[]> snapshots) {
+    public boolean send(final IntFunction<List<InventoryStackRequest.Action>> actionFactory, final Map<Container, BedrockItem[]> snapshots) {
         final int requestId = this.nextRequestId;
+        final List<InventoryStackRequest.Action> actions = List.copyOf(actionFactory.apply(requestId));
+        if (actions.isEmpty()) {
+            return false;
+        }
         this.nextRequestId -= 2; // Bedrock client request IDs are negative odd numbers
         this.pendingRequests.put(requestId, new PendingRequest(snapshots));
         final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
@@ -44,6 +49,7 @@ public final class InventoryRequestTracker extends StoredObject {
         request.write(BedrockTypes.UNSIGNED_VAR_INT, 1); // requests
         request.write(requestType, new InventoryStackRequest(requestId, actions));
         request.sendToServer(BedrockProtocol.class);
+        return true;
     }
 
     public PendingRequest remove(final int requestId) {

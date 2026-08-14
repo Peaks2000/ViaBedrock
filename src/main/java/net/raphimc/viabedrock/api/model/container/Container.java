@@ -78,34 +78,29 @@ public abstract class Container {
         }
 
         final InventoryTracker inventoryTracker = this.user.get(InventoryTracker.class);
+        final InventoryRequestTracker requestTracker = this.user.get(InventoryRequestTracker.class);
         final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
-        this.snapshot(snapshots, inventoryTracker.getHudContainer());
+        return requestTracker.send(requestId -> {
+            this.snapshot(snapshots, inventoryTracker.getHudContainer());
 
-        final List<InventoryStackRequest.Action> actions;
-        if ((this instanceof InventoryContainer || this instanceof CraftingTableContainer) && slot == 0) {
-            final int gridStart = this instanceof InventoryContainer ? 28 : 32;
-            final int gridWidth = this instanceof InventoryContainer ? 2 : 3;
-            actions = this.handleCrafting(button, action, inventoryTracker, snapshots, gridStart, gridWidth);
-        } else {
-            actions = switch (action) {
+            if ((this instanceof InventoryContainer || this instanceof CraftingTableContainer) && slot == 0) {
+                final int gridStart = this instanceof InventoryContainer ? 28 : 32;
+                final int gridWidth = this instanceof InventoryContainer ? 2 : 3;
+                return this.handleCrafting(button, action, inventoryTracker, snapshots, gridStart, gridWidth, requestId);
+            }
+            return switch (action) {
                 case PICKUP -> this.singleton(this.handlePickup(slot, button, inventoryTracker, snapshots));
                 case SWAP -> this.singleton(this.handleHotbarSwap(slot, button, inventoryTracker, snapshots));
                 case QUICK_MOVE -> this.handleQuickMove(slot, inventoryTracker, snapshots);
                 case THROW -> this.singleton(this.handleThrow(slot, button, inventoryTracker, snapshots));
                 default -> List.of();
             };
-        }
-        if (actions.isEmpty()) {
-            return false;
-        }
-
-        this.user.get(InventoryRequestTracker.class).send(actions, snapshots);
-        return true;
+        }, snapshots);
     }
 
     private List<InventoryStackRequest.Action> handleCrafting(final byte button, final ContainerInput action,
                                                               final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots,
-                                                              final int gridStart, final int gridWidth) {
+                                                              final int gridStart, final int gridWidth, final int requestId) {
         if ((action != ContainerInput.PICKUP || button != 0) && action != ContainerInput.QUICK_MOVE) return List.of();
 
         final Container hud = tracker.getHudContainer();
@@ -152,7 +147,7 @@ public abstract class Container {
             new InventoryStackRequest.Slot(
                 new FullContainerName(ContainerEnumName.CreatedOutputContainer, null),
                 50,
-                output.netId() != null ? output.netId() : 0
+                requestId // Created output stacks are identified by the client request that creates them.
             ),
             this.requestSlot(destination.container(), destination.slot(), destinationItem)
         ));
