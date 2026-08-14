@@ -89,10 +89,10 @@ public abstract class Container {
                 return this.handleCrafting(button, action, inventoryTracker, snapshots, gridStart, gridWidth, requestId);
             }
             return switch (action) {
-                case PICKUP -> this.singleton(this.handlePickup(slot, button, inventoryTracker, snapshots));
-                case SWAP -> this.singleton(this.handleHotbarSwap(slot, button, inventoryTracker, snapshots));
-                case QUICK_MOVE -> this.handleQuickMove(slot, inventoryTracker, snapshots);
-                case THROW -> this.singleton(this.handleThrow(slot, button, inventoryTracker, snapshots));
+                case PICKUP -> this.singleton(this.handlePickup(slot, button, inventoryTracker, snapshots, requestId));
+                case SWAP -> this.singleton(this.handleHotbarSwap(slot, button, inventoryTracker, snapshots, requestId));
+                case QUICK_MOVE -> this.handleQuickMove(slot, inventoryTracker, snapshots, requestId);
+                case THROW -> this.singleton(this.handleThrow(slot, button, inventoryTracker, snapshots, requestId));
                 default -> List.of();
             };
         }, snapshots);
@@ -101,9 +101,13 @@ public abstract class Container {
     private List<InventoryStackRequest.Action> handleCrafting(final byte button, final ContainerInput action,
                                                               final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots,
                                                               final int gridStart, final int gridWidth, final int requestId) {
-        if ((action != ContainerInput.PICKUP || button != 0) && action != ContainerInput.QUICK_MOVE) return List.of();
+        if ((action != ContainerInput.PICKUP || button != 0) && action != ContainerInput.QUICK_MOVE && action != ContainerInput.SWAP) {
+            return List.of();
+        }
+        if (action == ContainerInput.SWAP && (button < 0 || button > 8)) return List.of();
 
         final Container hud = tracker.getHudContainer();
+        final InventoryContainer inventory = tracker.getInventoryContainer();
         final BedrockItem output = hud.getItem(50);
         if (output.isEmpty()) return List.of();
 
@@ -119,74 +123,128 @@ public abstract class Container {
             return List.of();
         }
 
+        if (recipe.consumedSlots().isEmpty()) return List.of();
+        int maxCrafts = 255;
+        boolean hasRemainder = false;
+        for (CraftingRecipeStorage.ConsumedSlot consumed : recipe.consumedSlots()) {
+            if (consumed.count() <= 0) return List.of();
+            final BedrockItem ingredient = hud.getItem(consumed.slot());
+            maxCrafts = Math.min(maxCrafts, ingredient.amount() / consumed.count());
+            maxCrafts = Math.min(maxCrafts, 64 / consumed.count());
+            hasRemainder |= !this.craftingRemainder(ingredient).isEmpty();
+        }
+        if (maxCrafts <= 0) return List.of();
+
+        final int crafts;
         final SlotRef destination;
         if (action == ContainerInput.PICKUP) {
             destination = new SlotRef(hud, 0);
+            crafts = 1;
+        } else if (action == ContainerInput.SWAP) {
+            destination = new SlotRef(inventory, button);
+            if (!destination.container().getItem(destination.slot()).isEmpty()) return List.of();
+            crafts = 1;
         } else {
-            destination = this.findCraftDestination(output, tracker.getInventoryContainer());
-            if (destination == null) return List.of();
+            destination = null;
+            final int craftLimit = hasRemainder ? 1 : maxCrafts;
+            crafts = Math.min(craftLimit, this.inventoryCapacity(output, inventory) / output.amount());
+            if (crafts <= 0) return List.of();
         }
 
-        final BedrockItem destinationItem = destination.container().getItem(destination.slot());
-        if (!destinationItem.isEmpty() && (destinationItem.isDifferent(output) || destinationItem.amount() + output.amount() > 64)) {
+        if (hasRemainder && !this.craftingRemaindersFit(recipe.consumedSlots(), inventory, output, action, button, crafts)) {
             return List.of();
         }
 
+        if (destination != null) {
+            final BedrockItem destinationItem = destination.container().getItem(destination.slot());
+            if (!destinationItem.isEmpty()
+                && (destinationItem.isDifferent(output) || destinationItem.amount() + output.amount() > this.maxStackSize(output))) {
+                return List.of();
+            }
+        }
+
         this.snapshot(snapshots, hud);
-        this.snapshot(snapshots, destination.container());
+        this.snapshot(snapshots, inventory);
+        if (destination != null) this.snapshot(snapshots, destination.container());
         final List<InventoryStackRequest.Action> actions = new ArrayList<>();
-        actions.add(new InventoryStackRequest.CraftRecipe(recipe.networkId(), 1));
-        actions.add(new InventoryStackRequest.CraftResultsDeprecated(List.of(output.copy()), 1));
+        actions.add(new InventoryStackRequest.CraftRecipe(recipe.networkId(), crafts));
+        actions.add(new InventoryStackRequest.CraftResultsDeprecated(List.of(output.copy()), crafts));
         for (CraftingRecipeStorage.ConsumedSlot consumed : recipe.consumedSlots()) {
             final BedrockItem ingredient = hud.getItem(consumed.slot());
-            actions.add(new InventoryStackRequest.Consume(consumed.count(), this.requestSlot(hud, consumed.slot(), ingredient)));
-            hud.setItem(consumed.slot(), this.withRemovedAmount(ingredient, consumed.count()));
+            final int consumedAmount = consumed.count() * crafts;
+            actions.add(new InventoryStackRequest.Consume(consumedAmount, this.requestSlot(hud, consumed.slot(), ingredient)));
+            if (!this.craftingRemainder(ingredient).isEmpty()) {
+                actions.add(new InventoryStackRequest.Create(consumed.slot()));
+            }
         }
-        actions.add(new InventoryStackRequest.Take(
-            output.amount(),
-            new InventoryStackRequest.Slot(
-                new FullContainerName(ContainerEnumName.CreatedOutputContainer, null),
-                50,
-                requestId // Created output stacks are identified by the client request that creates them.
-            ),
-            this.requestSlot(destination.container(), destination.slot(), destinationItem)
-        ));
 
-        destination.container().setItem(
-            destination.slot(),
-            destinationItem.isEmpty() ? output.copy() : this.withAmount(destinationItem, destinationItem.amount() + output.amount())
-        );
+        if (action == ContainerInput.QUICK_MOVE) {
+            this.addCraftOutputToInventory(actions, inventory, output, crafts * output.amount(), requestId);
+        } else {
+            final BedrockItem destinationItem = destination.container().getItem(destination.slot());
+            actions.add(new InventoryStackRequest.Take(
+                output.amount(), this.createdOutputSlot(requestId),
+                this.requestSlot(destination.container(), destination.slot(), destinationItem)
+            ));
+            final BedrockItem newDestination = destinationItem.isEmpty()
+                ? this.withAmount(output, output.amount())
+                : this.withAmount(destinationItem, destinationItem.amount() + output.amount());
+            destination.container().setItem(destination.slot(), this.markModified(newDestination, requestId));
+        }
+
+        for (CraftingRecipeStorage.ConsumedSlot consumed : recipe.consumedSlots()) {
+            final BedrockItem ingredient = hud.getItem(consumed.slot());
+            final int consumedAmount = consumed.count() * crafts;
+            BedrockItem remaining = this.withRemovedAmount(ingredient, consumedAmount);
+            final BedrockItem remainder = this.craftingRemainder(ingredient);
+            if (!remainder.isEmpty()) {
+                int remainderAmount = remainder.amount() * consumedAmount;
+                if (remaining.isEmpty()) {
+                    final int amountInInput = Math.min(remainderAmount, this.maxStackSize(remainder));
+                    remaining = this.withAmount(remainder, amountInInput);
+                    remainderAmount -= amountInInput;
+                } else if (!remaining.isDifferent(remainder)) {
+                    final int amountInInput = Math.min(remainderAmount, this.maxStackSize(remainder) - remaining.amount());
+                    remaining = this.withAmount(remaining, remaining.amount() + amountInInput);
+                    remainderAmount -= amountInInput;
+                }
+                if (remainderAmount > 0) this.addToInventory(inventory, remainder, remainderAmount, requestId);
+            }
+            hud.setItem(consumed.slot(), this.markModified(remaining, requestId));
+        }
         hud.setItem(50, BedrockItem.empty());
         return actions;
     }
 
-    private SlotRef findCraftDestination(final BedrockItem output, final InventoryContainer inventory) {
+    private void addCraftOutputToInventory(final List<InventoryStackRequest.Action> actions, final InventoryContainer inventory,
+                                           final BedrockItem output, final int totalAmount, final int requestId) {
+        int remaining = totalAmount;
         for (int pass = 0; pass < 2; pass++) {
-            for (int slot = 9; slot < inventory.size(); slot++) {
+            for (int index = 0; index < inventory.size() && remaining > 0; index++) {
+                final int slot = index < inventory.size() - 9 ? index + 9 : index - (inventory.size() - 9);
                 final BedrockItem item = inventory.getItem(slot);
-                if ((pass == 0 && !item.isEmpty() && !item.isDifferent(output) && item.amount() + output.amount() <= 64)
-                    || (pass == 1 && item.isEmpty())) {
-                    return new SlotRef(inventory, slot);
-                }
-            }
-            for (int slot = 0; slot < 9; slot++) {
-                final BedrockItem item = inventory.getItem(slot);
-                if ((pass == 0 && !item.isEmpty() && !item.isDifferent(output) && item.amount() + output.amount() <= 64)
-                    || (pass == 1 && item.isEmpty())) {
-                    return new SlotRef(inventory, slot);
-                }
+                if (pass == 0 && (item.isEmpty() || item.isDifferent(output) || item.amount() >= this.maxStackSize(output))) continue;
+                if (pass == 1 && !item.isEmpty()) continue;
+
+                final int count = Math.min(remaining, item.isEmpty()
+                    ? this.maxStackSize(output) : this.maxStackSize(output) - item.amount());
+                actions.add(new InventoryStackRequest.Take(count, this.createdOutputSlot(requestId), this.requestSlot(inventory, slot, item)));
+                final BedrockItem moved = item.isEmpty()
+                    ? this.withAmount(output, count) : this.withAmount(item, item.amount() + count);
+                inventory.setItem(slot, this.markModified(moved, requestId));
+                remaining -= count;
             }
         }
-        return null;
     }
 
-    private InventoryStackRequest.Action handlePickup(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+    private InventoryStackRequest.Action handlePickup(final short javaSlot, final byte button, final InventoryTracker tracker,
+                                                      final Map<Container, BedrockItem[]> snapshots, final int requestId) {
         final Container cursor = tracker.getHudContainer();
         final BedrockItem cursorItem = cursor.getItem(0);
         if (javaSlot == -999) {
             if (cursorItem.isEmpty()) return null;
             final int count = button == 0 ? cursorItem.amount() : 1;
-            cursor.setItem(0, this.withRemovedAmount(cursorItem, count));
+            cursor.setItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
             return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, cursorItem), false);
         }
 
@@ -198,8 +256,8 @@ public abstract class Container {
         this.snapshot(snapshots, target.container());
         if (cursorItem.isEmpty()) {
             final int count = button == 0 ? targetItem.amount() : (targetItem.amount() + 1) / 2;
-            cursor.setItem(0, this.withAmount(targetItem, count));
-            target.container().setItem(target.slot(), this.withRemovedAmount(targetItem, count));
+            cursor.setItem(0, this.markModified(this.withAmount(targetItem, count), requestId));
+            target.container().setItem(target.slot(), this.markModified(this.withRemovedAmount(targetItem, count), requestId));
             return new InventoryStackRequest.Take(
                 count,
                 this.requestSlot(target.container(), target.slot(), targetItem),
@@ -208,14 +266,15 @@ public abstract class Container {
         }
 
         if (targetItem.isEmpty() || !targetItem.isDifferent(cursorItem)) {
-            final int capacity = targetItem.isEmpty() ? 64 : 64 - targetItem.amount();
+            final int capacity = targetItem.isEmpty()
+                ? this.maxStackSize(cursorItem) : this.maxStackSize(cursorItem) - targetItem.amount();
             final int requested = button == 0 ? cursorItem.amount() : 1;
             final int count = Math.min(capacity, requested);
             if (count <= 0) return null;
 
             final BedrockItem placed = targetItem.isEmpty() ? this.withAmount(cursorItem, count) : this.withAmount(targetItem, targetItem.amount() + count);
-            target.container().setItem(target.slot(), placed);
-            cursor.setItem(0, this.withRemovedAmount(cursorItem, count));
+            target.container().setItem(target.slot(), this.markModified(placed, requestId));
+            cursor.setItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
             return new InventoryStackRequest.Place(
                 count,
                 this.requestSlot(cursor, 0, cursorItem),
@@ -223,15 +282,16 @@ public abstract class Container {
             );
         }
 
-        cursor.setItem(0, targetItem.copy());
-        target.container().setItem(target.slot(), cursorItem.copy());
+        cursor.setItem(0, this.markModified(targetItem.copy(), requestId));
+        target.container().setItem(target.slot(), this.markModified(cursorItem.copy(), requestId));
         return new InventoryStackRequest.Swap(
             this.requestSlot(cursor, 0, cursorItem),
             this.requestSlot(target.container(), target.slot(), targetItem)
         );
     }
 
-    private InventoryStackRequest.Action handleHotbarSwap(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+    private InventoryStackRequest.Action handleHotbarSwap(final short javaSlot, final byte button, final InventoryTracker tracker,
+                                                          final Map<Container, BedrockItem[]> snapshots, final int requestId) {
         if (button < 0 || button > 8) return null;
         final SlotRef target = this.resolveJavaSlot(javaSlot, tracker);
         if (target == null) return null;
@@ -246,8 +306,8 @@ public abstract class Container {
 
         this.snapshot(snapshots, target.container());
         this.snapshot(snapshots, inventory);
-        target.container().setItem(target.slot(), hotbarItem.copy());
-        inventory.setItem(hotbarSlot, targetItem.copy());
+        target.container().setItem(target.slot(), this.markModified(hotbarItem.copy(), requestId));
+        inventory.setItem(hotbarSlot, this.markModified(targetItem.copy(), requestId));
 
         if (hotbarItem.isEmpty()) {
             return new InventoryStackRequest.Place(
@@ -268,13 +328,14 @@ public abstract class Container {
         );
     }
 
-    private InventoryStackRequest.Action handleThrow(final short javaSlot, final byte button, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+    private InventoryStackRequest.Action handleThrow(final short javaSlot, final byte button, final InventoryTracker tracker,
+                                                     final Map<Container, BedrockItem[]> snapshots, final int requestId) {
         if (javaSlot == -999) {
             final Container cursor = tracker.getHudContainer();
             final BedrockItem item = cursor.getItem(0);
             if (item.isEmpty()) return null;
             final int count = button == 0 ? 1 : item.amount();
-            cursor.setItem(0, this.withRemovedAmount(item, count));
+            cursor.setItem(0, this.markModified(this.withRemovedAmount(item, count), requestId));
             return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, item), false);
         }
 
@@ -285,11 +346,12 @@ public abstract class Container {
 
         this.snapshot(snapshots, source.container());
         final int count = button == 0 ? 1 : item.amount();
-        source.container().setItem(source.slot(), this.withRemovedAmount(item, count));
+        source.container().setItem(source.slot(), this.markModified(this.withRemovedAmount(item, count), requestId));
         return new InventoryStackRequest.Drop(count, this.requestSlot(source.container(), source.slot(), item), false);
     }
 
-    private List<InventoryStackRequest.Action> handleQuickMove(final short javaSlot, final InventoryTracker tracker, final Map<Container, BedrockItem[]> snapshots) {
+    private List<InventoryStackRequest.Action> handleQuickMove(final short javaSlot, final InventoryTracker tracker,
+                                                               final Map<Container, BedrockItem[]> snapshots, final int requestId) {
         final SlotRef source = this.resolveJavaSlot(javaSlot, tracker);
         if (source == null) return List.of();
         BedrockItem sourceItem = source.container().getItem(source.slot());
@@ -317,12 +379,13 @@ public abstract class Container {
                 if (destination.container() == source.container() && destination.slot() == source.slot()) continue;
                 final BedrockItem destinationItem = destination.container().getItem(destination.slot());
                 if (merge) {
-                    if (destinationItem.isEmpty() || destinationItem.isDifferent(sourceItem) || destinationItem.amount() >= 64) continue;
+                    if (destinationItem.isEmpty() || destinationItem.isDifferent(sourceItem) || destinationItem.amount() >= this.maxStackSize(sourceItem)) continue;
                 } else if (!destinationItem.isEmpty()) {
                     continue;
                 }
 
-                final int count = Math.min(sourceItem.amount(), merge ? 64 - destinationItem.amount() : 64);
+                final int count = Math.min(sourceItem.amount(), merge
+                    ? this.maxStackSize(sourceItem) - destinationItem.amount() : this.maxStackSize(sourceItem));
                 if (count <= 0) continue;
                 this.snapshot(snapshots, source.container());
                 this.snapshot(snapshots, destination.container());
@@ -335,8 +398,8 @@ public abstract class Container {
                 final BedrockItem moved = destinationItem.isEmpty()
                     ? this.withAmount(sourceItem, count)
                     : this.withAmount(destinationItem, destinationItem.amount() + count);
-                destination.container().setItem(destination.slot(), moved);
-                sourceItem = this.withRemovedAmount(sourceItem, count);
+                destination.container().setItem(destination.slot(), this.markModified(moved, requestId));
+                sourceItem = this.markModified(this.withRemovedAmount(sourceItem, count), requestId);
                 source.container().setItem(source.slot(), sourceItem);
             }
         }
@@ -372,6 +435,121 @@ public abstract class Container {
 
     private InventoryStackRequest.Slot requestSlot(final Container container, final int slot, final BedrockItem item) {
         return new InventoryStackRequest.Slot(container.getFullContainerName(slot), slot, item.netId() != null ? item.netId() : 0);
+    }
+
+    private InventoryStackRequest.Slot createdOutputSlot(final int requestId) {
+        return new InventoryStackRequest.Slot(
+            new FullContainerName(ContainerEnumName.CreatedOutputContainer, null), 50, requestId
+        );
+    }
+
+    private int maxStackSize(final BedrockItem item) {
+        return this.user.get(ItemRewriter.class).maxStackSize(item);
+    }
+
+    private int inventoryCapacity(final BedrockItem item, final InventoryContainer inventory) {
+        int capacity = 0;
+        final int maxStackSize = this.maxStackSize(item);
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            final BedrockItem target = inventory.getItem(slot);
+            if (target.isEmpty()) {
+                capacity += maxStackSize;
+            } else if (!target.isDifferent(item)) {
+                capacity += Math.max(0, maxStackSize - target.amount());
+            }
+        }
+        return capacity;
+    }
+
+    private int addToInventory(final InventoryContainer inventory, final BedrockItem item, final int totalAmount, final int requestId) {
+        int remaining = totalAmount;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int index = 0; index < inventory.size() && remaining > 0; index++) {
+                final int slot = index < inventory.size() - 9 ? index + 9 : index - (inventory.size() - 9);
+                final BedrockItem target = inventory.getItem(slot);
+                if (pass == 0 && (target.isEmpty() || target.isDifferent(item) || target.amount() >= this.maxStackSize(item))) continue;
+                if (pass == 1 && !target.isEmpty()) continue;
+
+                final int count = Math.min(remaining, target.isEmpty()
+                    ? this.maxStackSize(item) : this.maxStackSize(item) - target.amount());
+                final BedrockItem result = target.isEmpty()
+                    ? this.withAmount(item, count) : this.withAmount(target, target.amount() + count);
+                inventory.setItem(slot, this.markModified(result, requestId));
+                remaining -= count;
+            }
+        }
+        return totalAmount - remaining;
+    }
+
+    private boolean craftingRemaindersFit(final List<CraftingRecipeStorage.ConsumedSlot> consumedSlots,
+                                          final InventoryContainer inventory, final BedrockItem output,
+                                          final ContainerInput action, final byte button, final int crafts) {
+        final BedrockItem[] simulatedInventory = inventory.getItems();
+        if (action == ContainerInput.QUICK_MOVE) {
+            if (this.addToInventory(simulatedInventory, output, crafts * output.amount()) < crafts * output.amount()) return false;
+        } else if (action == ContainerInput.SWAP) {
+            simulatedInventory[button] = output.copy();
+        }
+
+        for (CraftingRecipeStorage.ConsumedSlot consumed : consumedSlots) {
+            final BedrockItem ingredient = this.user.get(InventoryTracker.class).getHudContainer().getItem(consumed.slot());
+            final BedrockItem remainder = this.craftingRemainder(ingredient);
+            if (remainder.isEmpty()) continue;
+
+            final BedrockItem remaining = this.withRemovedAmount(ingredient, consumed.count() * crafts);
+            int remainderAmount = remainder.amount() * consumed.count() * crafts;
+            if (remaining.isEmpty()) {
+                remainderAmount -= Math.min(remainderAmount, this.maxStackSize(remainder));
+            } else if (!remaining.isDifferent(remainder)) {
+                remainderAmount -= Math.min(remainderAmount, this.maxStackSize(remainder) - remaining.amount());
+            }
+            if (remainderAmount > 0 && this.addToInventory(simulatedInventory, remainder, remainderAmount) < remainderAmount) return false;
+        }
+        return true;
+    }
+
+    private int addToInventory(final BedrockItem[] inventory, final BedrockItem item, final int totalAmount) {
+        int remaining = totalAmount;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int index = 0; index < inventory.length && remaining > 0; index++) {
+                final int slot = index < inventory.length - 9 ? index + 9 : index - (inventory.length - 9);
+                final BedrockItem target = inventory[slot];
+                if (pass == 0 && (target.isEmpty() || target.isDifferent(item) || target.amount() >= this.maxStackSize(item))) continue;
+                if (pass == 1 && !target.isEmpty()) continue;
+
+                final int count = Math.min(remaining, target.isEmpty()
+                    ? this.maxStackSize(item) : this.maxStackSize(item) - target.amount());
+                inventory[slot] = target.isEmpty()
+                    ? this.withAmount(item, count) : this.withAmount(target, target.amount() + count);
+                remaining -= count;
+            }
+        }
+        return totalAmount - remaining;
+    }
+
+    private BedrockItem craftingRemainder(final BedrockItem item) {
+        if (item.isEmpty()) return BedrockItem.empty();
+        final ItemRewriter itemRewriter = this.user.get(ItemRewriter.class);
+        final String identifier = itemRewriter.getItems().inverse().get(item.identifier());
+        if ("minecraft:written_book".equals(identifier)
+            || (identifier != null && identifier.endsWith("_banner") && item.tag() != null && item.tag().contains("Patterns"))) {
+            return this.withAmount(item, 1);
+        }
+
+        if (identifier == null) return BedrockItem.empty();
+        final String remainderIdentifier = switch (identifier) {
+            case "minecraft:water_bucket", "minecraft:lava_bucket", "minecraft:milk_bucket" -> "minecraft:bucket";
+            case "minecraft:dragon_breath", "minecraft:honey_bottle" -> "minecraft:glass_bottle";
+            default -> null;
+        };
+        if (remainderIdentifier == null) return BedrockItem.empty();
+        final Integer runtimeId = itemRewriter.getItems().get(remainderIdentifier);
+        return runtimeId != null ? new BedrockItem(runtimeId) : BedrockItem.empty();
+    }
+
+    private BedrockItem markModified(final BedrockItem item, final int requestId) {
+        if (!item.isEmpty()) item.setNetId(requestId);
+        return item;
     }
 
     private List<InventoryStackRequest.Action> singleton(final InventoryStackRequest.Action action) {

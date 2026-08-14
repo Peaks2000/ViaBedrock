@@ -60,6 +60,8 @@ public final class InventoryStackRequestType extends Type<InventoryStackRequest>
         } else if (action instanceof InventoryStackRequest.Consume consume) {
             buffer.writeByte(consume.count());
             this.writeSlot(buffer, consume.source());
+        } else if (action instanceof InventoryStackRequest.Create create) {
+            buffer.writeByte(create.slot());
         } else if (action instanceof InventoryStackRequest.CraftRecipe craftRecipe) {
             BedrockTypes.UNSIGNED_VAR_INT.write(buffer, craftRecipe.recipeNetworkId());
             buffer.writeByte(craftRecipe.requestedCrafts());

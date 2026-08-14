@@ -18,6 +18,7 @@
 package net.raphimc.viabedrock.api.resourcepack.definition;
 
 import com.viaversion.nbt.tag.CompoundTag;
+import com.viaversion.nbt.tag.NumberTag;
 import com.viaversion.nbt.tag.StringTag;
 import com.viaversion.viaversion.libs.gson.JsonObject;
 import com.viaversion.viaversion.util.Key;
@@ -49,6 +50,9 @@ public class ItemDefinitions {
                         if (components.has("minecraft:display_name")) {
                             itemDefinition.displayNameComponent = components.get("minecraft:display_name").getAsString();
                         }
+                        if (components.has("minecraft:max_stack_size")) {
+                            itemDefinition.maxStackSize = components.get("minecraft:max_stack_size").getAsInt();
+                        }
                     }
                     this.items.put(identifier, itemDefinition);
                 } catch (Throwable e) {
@@ -69,11 +73,18 @@ public class ItemDefinitions {
                         }
                     }
                 }
+                if (itemProperties.contains("minecraft:max_stack_size")) {
+                    itemDefinition.maxStackSize = itemProperties.getInt("minecraft:max_stack_size");
+                }
             }
             if (components.get("minecraft:display_name") instanceof CompoundTag displayName) {
                 if (displayName.get("value") instanceof StringTag value) {
                     itemDefinition.displayNameComponent = value.getValue();
                 }
+            }
+            if (components.get("minecraft:max_stack_size") instanceof CompoundTag maxStackSize
+                && maxStackSize.get("value") instanceof NumberTag value) {
+                itemDefinition.maxStackSize = value.asInt();
             }
         }
         this.items.put(identifier, itemDefinition);
@@ -92,6 +103,7 @@ public class ItemDefinitions {
         private final String identifier;
         private String iconComponent;
         private String displayNameComponent;
+        private Integer maxStackSize;
 
         public ItemDefinition(final String identifier) {
             this.identifier = identifier;
@@ -107,6 +119,10 @@ public class ItemDefinitions {
 
         public String displayNameComponent() {
             return this.displayNameComponent;
+        }
+
+        public Integer maxStackSize() {
+            return this.maxStackSize;
         }
 
     }

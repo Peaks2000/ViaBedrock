@@ -292,6 +292,48 @@ public class ItemRewriter extends StoredObject {
         return bedrockItems;
     }
 
+    public int maxStackSize(final BedrockItem bedrockItem) {
+        if (bedrockItem == null || bedrockItem.isEmpty()) return 64;
+
+        final String identifier = this.items.inverse().get(bedrockItem.identifier());
+        if (identifier == null) return 64;
+
+        final ItemDefinitions.ItemDefinition itemDefinition = this.user().get(ResourcePackStorage.class).getItems().get(identifier);
+        if (itemDefinition != null && itemDefinition.maxStackSize() != null) {
+            return Math.max(1, itemDefinition.maxStackSize());
+        }
+
+        return vanillaMaxStackSize(identifier);
+    }
+
+    private static int vanillaMaxStackSize(final String identifier) {
+        final String item = Key.stripMinecraftNamespace(identifier);
+        if (item.equals("ender_pearl") || item.equals("snowball") || item.equals("egg")
+            || item.equals("honey_bottle") || item.equals("armor_stand") || item.equals("written_book")
+            || item.endsWith("_sign") || item.endsWith("_hanging_sign") || item.endsWith("_banner")) {
+            return 16;
+        }
+        if (item.endsWith("_bed") || item.endsWith("_boat") || item.endsWith("_chest_boat")
+            || item.endsWith("_minecart") || item.endsWith("_bucket") || item.endsWith("_sword")
+            || item.endsWith("_shovel") || item.endsWith("_pickaxe") || item.endsWith("_axe")
+            || item.endsWith("_hoe") || item.endsWith("_spear") || item.endsWith("_helmet")
+            || item.endsWith("_chestplate") || item.endsWith("_leggings") || item.endsWith("_boots")
+            || item.endsWith("_horse_armor") || item.equals("wolf_armor") || item.startsWith("music_disc_")
+            || item.equals("bow") || item.equals("crossbow") || item.equals("trident")
+            || item.equals("shield") || item.equals("mace") || item.equals("shears")
+            || item.equals("brush") || item.equals("flint_and_steel") || item.equals("fishing_rod")
+            || item.equals("carrot_on_a_stick") || item.equals("warped_fungus_on_a_stick")
+            || item.equals("saddle") || item.equals("elytra") || item.equals("enchanted_book")
+            || item.equals("potion") || item.equals("splash_potion") || item.equals("lingering_potion")
+            || item.equals("ominous_bottle") || item.equals("mushroom_stew") || item.equals("rabbit_stew")
+            || item.equals("beetroot_soup") || item.equals("suspicious_stew") || item.equals("cake")
+            || item.equals("totem_of_undying") || item.equals("goat_horn") || item.equals("spyglass")
+            || item.equals("bundle") || item.endsWith("_shulker_box") || item.equals("shulker_box")) {
+            return 1;
+        }
+        return 64;
+    }
+
     public BiMap<String, Integer> getItems() {
         return this.items;
     }

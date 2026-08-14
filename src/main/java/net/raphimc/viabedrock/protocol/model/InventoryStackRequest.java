@@ -36,7 +36,7 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         }
     }
 
-    public sealed interface Action permits Take, Place, Swap, Drop, Consume, CraftRecipe, CraftResultsDeprecated {
+    public sealed interface Action permits Take, Place, Swap, Drop, Consume, Create, CraftRecipe, CraftResultsDeprecated {
 
         ItemStackRequestActionType type();
 
@@ -104,6 +104,19 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         @Override
         public ItemStackRequestActionType type() {
             return ItemStackRequestActionType.Consume;
+        }
+    }
+
+    public record Create(int slot) implements Action {
+        public Create {
+            if (slot < 0 || slot > 255) {
+                throw new IllegalArgumentException("Created inventory slot must fit an unsigned byte: " + slot);
+            }
+        }
+
+        @Override
+        public ItemStackRequestActionType type() {
+            return ItemStackRequestActionType.Create;
         }
     }
 
