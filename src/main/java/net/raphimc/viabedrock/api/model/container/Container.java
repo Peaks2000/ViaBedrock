@@ -36,7 +36,6 @@ import net.raphimc.viabedrock.protocol.storage.InventoryRequestTracker;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -724,7 +723,11 @@ public abstract class Container {
     }
 
     public BedrockItem[] getItems() {
-        return Arrays.copyOf(this.items, this.items.length);
+        final BedrockItem[] copy = new BedrockItem[this.items.length];
+        for (int i = 0; i < this.items.length; i++) {
+            copy[i] = this.items[i] != null ? this.items[i].copy() : BedrockItem.empty();
+        }
+        return copy;
     }
 
     public boolean setItem(final int slot, final BedrockItem item) {
@@ -746,7 +749,7 @@ public abstract class Container {
         }
 
         for (int i = 0; i < items.length; i++) {
-            this.setItem(i, items[i]);
+            this.setItem(i, items[i] != null ? items[i].copy() : BedrockItem.empty());
         }
         return true;
     }

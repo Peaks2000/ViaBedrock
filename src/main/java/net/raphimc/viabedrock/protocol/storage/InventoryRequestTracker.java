@@ -22,6 +22,8 @@ import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import net.raphimc.viabedrock.protocol.types.inventory.InventoryStackRequestType;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntFunction;
@@ -29,6 +31,7 @@ import java.util.function.IntFunction;
 public final class InventoryRequestTracker extends StoredObject {
 
     private final Int2ObjectOpenHashMap<PendingRequest> pendingRequests = new Int2ObjectOpenHashMap<>();
+    private final Deque<Runnable> queuedRequests = new ArrayDeque<>();
     private int nextRequestId = -1;
 
     public InventoryRequestTracker(final UserConnection user) {
@@ -42,7 +45,7 @@ public final class InventoryRequestTracker extends StoredObject {
             return false;
         }
         this.nextRequestId -= 2; // Bedrock client request IDs are negative odd numbers
-        this.pendingRequests.put(requestId, new PendingRequest(snapshots));
+        this.pendingRequests.put(requestId, new PendingRequest(snapshots, actions));
         final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
         final InventoryStackRequestType requestType = new InventoryStackRequestType(runtimeId -> itemRewriter.getItems().inverse().get(runtimeId));
         final PacketWrapper request = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, this.user());
@@ -56,6 +59,25 @@ public final class InventoryRequestTracker extends StoredObject {
         return this.pendingRequests.remove(requestId);
     }
 
-    public record PendingRequest(Map<Container, BedrockItem[]> snapshots) {
+    /**
+     * Runs an inventory change only after all earlier requests have received a response.
+     * Creative clicks can produce several Java slot packets in one tick; serializing them
+     * prevents a later packet from referring to the client ID of a request that is rejected.
+     */
+    public void executeWhenIdle(final Runnable request) {
+        if (this.pendingRequests.isEmpty() && this.queuedRequests.isEmpty()) {
+            request.run();
+        } else {
+            this.queuedRequests.addLast(request);
+        }
+    }
+
+    public void runQueuedRequests() {
+        while (this.pendingRequests.isEmpty() && !this.queuedRequests.isEmpty()) {
+            this.queuedRequests.removeFirst().run();
+        }
+    }
+
+    public record PendingRequest(Map<Container, BedrockItem[]> snapshots, List<InventoryStackRequest.Action> actions) {
     }
 }
