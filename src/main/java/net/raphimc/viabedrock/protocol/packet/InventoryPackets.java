@@ -352,6 +352,10 @@ public class InventoryPackets {
                         entry.getKey().setItems(entry.getValue());
                         correctedContainers.add(entry.getKey());
                     }
+                    // The rollback restores our last prediction, which can itself be stale after
+                    // client-predicted pickups or a game-mode transition. Ask Bedrock to resend
+                    // the real slot contents before the next Java click reuses invalid stack IDs.
+                    inventoryTracker.schedulePlayerInventoryResync();
                 }
 
                 // Successful stack responses carry authoritative amounts and stack-network IDs.

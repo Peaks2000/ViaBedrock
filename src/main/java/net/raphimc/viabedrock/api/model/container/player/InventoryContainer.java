@@ -115,9 +115,9 @@ public class InventoryContainer extends Container {
 
     /**
      * Mirrors Bedrock's local pickup prediction when the host does not send an
-     * InventorySlot packet. Existing stacks are filled before empty slots, and
-     * the selected hotbar slot is preferred when it can accept the item.
-     * Authoritative inventory packets may overwrite this state afterwards.
+     * InventorySlot packet. Bedrock scans the player's raw inventory slots in
+     * order, filling existing stacks before using the first empty slots.
+     * Authoritative inventory packets overwrite this state afterwards.
      *
      * @return the number of items inserted into the tracked inventory
      */
@@ -126,13 +126,8 @@ public class InventoryContainer extends Container {
 
         int remaining = pickedUpItem.amount();
         final int maxStackSize = this.user.get(ItemRewriter.class).maxStackSize(pickedUpItem);
-        final int selectedSlot = Byte.toUnsignedInt(this.selectedHotbarSlot);
-
-        remaining = this.mergePickupIntoSlot(pickedUpItem, selectedSlot, remaining, maxStackSize);
         for (int slot = 0; slot < this.items.length && remaining > 0; slot++) {
-            if (slot != selectedSlot) {
-                remaining = this.mergePickupIntoSlot(pickedUpItem, slot, remaining, maxStackSize);
-            }
+            remaining = this.mergePickupIntoSlot(pickedUpItem, slot, remaining, maxStackSize);
         }
         for (int slot = 0; slot < this.items.length && remaining > 0; slot++) {
             if (!this.items[slot].isEmpty()) continue;

@@ -31,8 +31,12 @@ import net.raphimc.viabedrock.api.model.container.player.HudContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.container.player.OffhandContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
+import net.raphimc.viabedrock.experimental.model.inventory.BedrockInventoryTransaction;
+import net.raphimc.viabedrock.experimental.model.inventory.InventoryTransactionData;
+import net.raphimc.viabedrock.experimental.rewriter.InventoryTransactionRewriter;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
@@ -46,12 +50,13 @@ import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 
 public class InventoryTracker extends StoredObject {
 
-    private static final int PLAYER_PICKUP_REFRESH_DELAY_TICKS = 2;
+    private static final int PLAYER_INVENTORY_REFRESH_DELAY_TICKS = 2;
 
     private final InventoryContainer inventoryContainer = new InventoryContainer(this.user());
     private final OffhandContainer offhandContainer = new OffhandContainer(this.user());
@@ -62,7 +67,8 @@ public class InventoryTracker extends StoredObject {
     private Container currentContainer = null;
     private Container pendingCloseContainer = null;
     private IntObjectPair<Form> currentForm = null;
-    private int playerPickupRefreshTicks;
+    private int playerInventoryRefreshTicks;
+    private boolean playerInventoryResyncPending;
 
     public InventoryTracker(final UserConnection user) {
         super(user);
@@ -146,8 +152,12 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void tick() {
-        if (this.playerPickupRefreshTicks > 0 && --this.playerPickupRefreshTicks == 0) {
+        if (this.playerInventoryRefreshTicks > 0 && --this.playerInventoryRefreshTicks == 0) {
             PacketFactory.sendJavaContainerSetContent(this.user(), this.inventoryContainer);
+            if (this.playerInventoryResyncPending) {
+                this.playerInventoryResyncPending = false;
+                this.requestPlayerInventoryResync();
+            }
         }
 
         if (this.currentContainer != null && this.currentContainer.position() != null) {
@@ -174,9 +184,34 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void schedulePlayerPickupRefresh() {
-        // InventorySlot is authoritative and may arrive immediately before or after TakeItemActor.
-        // Coalesce nearby pickups and publish the tracked state after both packets have been handled.
-        this.playerPickupRefreshTicks = PLAYER_PICKUP_REFRESH_DELAY_TICKS;
+        // Client-hosted worlds can omit InventorySlot after TakeItemActor because Bedrock clients
+        // predict pickups locally. Publish that prediction, then ask the host for the authoritative
+        // slot contents and stack-network IDs. Coalesce nearby pickups into one round trip.
+        this.playerInventoryRefreshTicks = PLAYER_INVENTORY_REFRESH_DELAY_TICKS;
+        this.playerInventoryResyncPending = true;
+    }
+
+    public void schedulePlayerInventoryResync() {
+        this.playerInventoryRefreshTicks = Math.max(this.playerInventoryRefreshTicks, 1);
+        this.playerInventoryResyncPending = true;
+    }
+
+    private void requestPlayerInventoryResync() {
+        final InventoryTransactionRewriter transactionRewriter = this.user().get(InventoryTransactionRewriter.class);
+        if (transactionRewriter == null) return;
+
+        // InventoryMismatch is Bedrock's client-to-server request for a full authoritative
+        // inventory resend. It has no actions or type-specific payload.
+        final BedrockInventoryTransaction transaction = new BedrockInventoryTransaction(
+            0,
+            List.of(),
+            List.of(),
+            ComplexInventoryTransaction_Type.InventoryMismatch,
+            new InventoryTransactionData.MismatchTransactionData()
+        );
+        final PacketWrapper packet = PacketWrapper.create(ServerboundBedrockPackets.INVENTORY_TRANSACTION, this.user());
+        packet.write(transactionRewriter.getInventoryTransactionType(), transaction);
+        packet.sendToServer(BedrockProtocol.class);
     }
 
     public boolean isContainerOpen() {

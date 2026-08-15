@@ -73,6 +73,10 @@ public class ClientPlayerPackets {
     private static final PacketHandler CLIENT_PLAYER_GAME_MODE_UPDATE = wrapper -> {
         final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
         PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.CHANGE_GAME_MODE, clientPlayer.javaGameMode().ordinal());
+        // Creative and survival keep the same Bedrock player inventory, but the Java client
+        // rebuilds its inventory screen and can immediately emit creative slot updates. Refresh
+        // authoritative contents first so those updates use the host's current stack IDs.
+        wrapper.user().get(InventoryTracker.class).schedulePlayerInventoryResync();
     };
 
     private static final PacketHandler CLIENT_PLAYER_ABILITIES_UPDATE = wrapper -> {
@@ -102,6 +106,11 @@ public class ClientPlayerPackets {
                         final GameRulesStorage gameRulesStorage = wrapper.user().get(GameRulesStorage.class);
                         final ChunkTracker chunkTracker = wrapper.user().get(ChunkTracker.class);
                         final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
+                        // A death in another dimension can produce CHANGE_DIMENSION followed by
+                        // ReadyToSpawn. CHANGE_DIMENSION has already emitted Java's respawn packet;
+                        // emitting a second one here corrupts the immediately following play-packet
+                        // boundary on the local client.
+                        final boolean dimensionRespawnAlreadySent = clientPlayer.consumeRecentJavaDimensionRespawn();
 
                         if (clientPlayer.isDead() && !gameRulesStorage.<Boolean>getGameRule("keepInventory")) {
                             inventoryTracker.getInventoryContainer().clearItems();
@@ -114,24 +123,26 @@ public class ClientPlayerPackets {
 
                         clientPlayer.setHealth(clientPlayer.attributes().get("minecraft:health").maxValue());
                         clientPlayer.sendPlayerActionPacketToServer(PlayerActionType.Respawn, -1);
-                        wrapper.write(Types.VAR_INT, chunkTracker.getDimension().ordinal()); // dimension id
-                        wrapper.write(Types.STRING, chunkTracker.getDimension().getKey()); // dimension name
-                        wrapper.write(Types.LONG, 0L); // hashed seed
-                        wrapper.write(Types.BYTE, (byte) clientPlayer.javaGameMode().ordinal()); // game mode
-                        wrapper.write(Types.BYTE, (byte) -1); // previous game mode
-                        wrapper.write(Types.BOOLEAN, false); // is debug
-                        wrapper.write(Types.BOOLEAN, gameSession.isFlatGenerator()); // is flat
-                        wrapper.write(Types.OPTIONAL_GLOBAL_POSITION, null); // last death position
-                        wrapper.write(Types.VAR_INT, 0); // portal cooldown
-                        wrapper.write(Types.VAR_INT, 64); // sea level
-                        wrapper.write(Types.BYTE, (byte) (RespawnKeepFlag.ATTRIBUTE_MODIFIERS.getBit() | RespawnKeepFlag.ENTITY_DATA.getBit())); // keep data mask
-                        wrapper.send(BedrockProtocol.class);
-                        clientPlayer.sendAttribute("minecraft:health"); // Ensure health is synced
-                        clientPlayer.setAbilities(clientPlayer.abilities()); // Java client always resets abilities on respawn. Resend them
-                        PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.LEVEL_CHUNKS_LOAD_START, 0F);
-                        if (gameRulesStorage.getGameRule("keepInventory")) {
-                            PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer()); // Java client always resets inventory on respawn. Resend it
+                        if (!dimensionRespawnAlreadySent) {
+                            wrapper.write(Types.VAR_INT, chunkTracker.getDimension().ordinal()); // dimension id
+                            wrapper.write(Types.STRING, chunkTracker.getDimension().getKey()); // dimension name
+                            wrapper.write(Types.LONG, 0L); // hashed seed
+                            wrapper.write(Types.BYTE, (byte) clientPlayer.javaGameMode().ordinal()); // game mode
+                            wrapper.write(Types.BYTE, (byte) -1); // previous game mode
+                            wrapper.write(Types.BOOLEAN, false); // is debug
+                            wrapper.write(Types.BOOLEAN, gameSession.isFlatGenerator()); // is flat
+                            wrapper.write(Types.OPTIONAL_GLOBAL_POSITION, null); // last death position
+                            wrapper.write(Types.VAR_INT, 0); // portal cooldown
+                            wrapper.write(Types.VAR_INT, 64); // sea level
+                            wrapper.write(Types.BYTE, (byte) (RespawnKeepFlag.ATTRIBUTE_MODIFIERS.getBit() | RespawnKeepFlag.ENTITY_DATA.getBit())); // keep data mask
+                            wrapper.send(BedrockProtocol.class);
                         }
+                        clientPlayer.sendAttribute("minecraft:health"); // Ensure health is synced
+                        if (!dimensionRespawnAlreadySent) {
+                            clientPlayer.setAbilities(clientPlayer.abilities()); // Java client always resets abilities on respawn. Resend them
+                            PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.LEVEL_CHUNKS_LOAD_START, 0F);
+                        }
+                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                         inventoryTracker.getInventoryContainer().sendSelectedHotbarSlotToClient(); // Java client always resets selected hotbar slot on respawn. Resend it
                     }
                     wrapper.cancel();

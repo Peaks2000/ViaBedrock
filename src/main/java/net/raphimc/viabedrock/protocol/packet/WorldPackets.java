@@ -173,6 +173,7 @@ public class WorldPackets {
             wrapper.write(Types.VAR_INT, 64); // sea level
             wrapper.write(Types.BYTE, (byte) (RespawnKeepFlag.ATTRIBUTE_MODIFIERS.getBit() | RespawnKeepFlag.ENTITY_DATA.getBit())); // keep data mask
             wrapper.send(BedrockProtocol.class);
+            clientPlayer.markJavaDimensionRespawnSent();
             wrapper.cancel();
             clientPlayer.sendPlayerPositionPacketToClient(Relative.NONE);
             clientPlayer.sendAttribute("minecraft:health"); // Java client always resets health on respawn, but Bedrock client keeps health when switching dimensions

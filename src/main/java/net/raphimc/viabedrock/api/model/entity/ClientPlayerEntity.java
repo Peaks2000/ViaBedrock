@@ -57,6 +57,7 @@ public class ClientPlayerEntity extends PlayerEntity {
     // Initial spawn and respawning
     private boolean initiallySpawned;
     private DimensionChangeInfo dimensionChangeInfo;
+    private long javaDimensionRespawnTick = Long.MIN_VALUE;
     private boolean wasInsideUnloadedChunk;
 
     // Position syncing
@@ -331,6 +332,16 @@ public class ClientPlayerEntity extends PlayerEntity {
 
     public void setDimensionChangeInfo(final DimensionChangeInfo dimensionChangeInfo) {
         this.dimensionChangeInfo = dimensionChangeInfo;
+    }
+
+    public void markJavaDimensionRespawnSent() {
+        this.javaDimensionRespawnTick = this.age;
+    }
+
+    public boolean consumeRecentJavaDimensionRespawn() {
+        final long elapsedTicks = this.age - this.javaDimensionRespawnTick;
+        this.javaDimensionRespawnTick = Long.MIN_VALUE;
+        return elapsedTicks >= 0 && elapsedTicks <= 20;
     }
 
     public Set<InputFlag> inputFlags() {
