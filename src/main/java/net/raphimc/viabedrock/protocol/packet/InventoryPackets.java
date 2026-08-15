@@ -358,6 +358,13 @@ public class InventoryPackets {
                     inventoryTracker.schedulePlayerInventoryResync();
                 }
 
+                // Java's creative screen applies SetCreativeModeSlot changes itself and keeps its carried item
+                // only on the client. A successful Bedrock response must update our internal stack IDs without
+                // sending a full inventory packet: that packet would contain Bedrock's empty HUD cursor and make
+                // the item on Java's mouse disappear halfway through a move. Failed requests still use the normal
+                // rollback and full refresh below so an unaccepted prediction cannot become a real duplication.
+                final boolean javaClientManagedSuccess = result == ItemStackNetResult.Success && pending.javaClientManaged();
+
                 // Successful stack responses carry authoritative amounts and stack-network IDs.
                 // Apply them after any rollback so acknowledged predictions never retain their
                 // temporary negative client request ID.
@@ -384,14 +391,16 @@ public class InventoryPackets {
                     correctedContainers.add(container);
                 }
 
-                for (Container container : correctedContainers) {
-                    if (container == inventoryTracker.getHudContainer() && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer) {
-                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getCurrentContainer());
-                    } else if (container != inventoryTracker.getHudContainer()) {
-                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
+                if (!javaClientManagedSuccess) {
+                    for (Container container : correctedContainers) {
+                        if (container == inventoryTracker.getHudContainer() && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer) {
+                            PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getCurrentContainer());
+                        } else if (container != inventoryTracker.getHudContainer()) {
+                            PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
+                        }
                     }
+                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                 }
-                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                 requestTracker.runQueuedRequests();
             }
         });
@@ -797,7 +806,7 @@ public class InventoryPackets {
                 return List.of(new InventoryStackRequest.Destroy(
                     existingItem.amount(), requestSlot(target.container(), target.slot(), existingItem)
                 ));
-            }, snapshots);
+            }, snapshots, true);
             if (!sent) PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
             return;
         }
@@ -849,7 +858,7 @@ public class InventoryPackets {
             predictedItem.setNetId(requestId);
             target.container().setItem(target.slot(), predictedItem);
             return actions;
-        }, snapshots);
+        }, snapshots, true);
         if (!sent) PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
     }
 

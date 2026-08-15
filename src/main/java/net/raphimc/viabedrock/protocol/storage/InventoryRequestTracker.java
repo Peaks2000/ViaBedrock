@@ -39,13 +39,25 @@ public final class InventoryRequestTracker extends StoredObject {
     }
 
     public boolean send(final IntFunction<List<InventoryStackRequest.Action>> actionFactory, final Map<Container, BedrockItem[]> snapshots) {
+        return this.send(actionFactory, snapshots, false);
+    }
+
+    /**
+     * Sends one Bedrock inventory request.
+     *
+     * @param javaClientManaged whether Java has already applied the complete visible slot change locally. Creative
+     *                          slot packets use this because Java keeps its creative cursor entirely client-side;
+     *                          echoing Bedrock's empty HUD cursor after a successful request would erase that cursor.
+     */
+    public boolean send(final IntFunction<List<InventoryStackRequest.Action>> actionFactory,
+                        final Map<Container, BedrockItem[]> snapshots, final boolean javaClientManaged) {
         final int requestId = this.nextRequestId;
         final List<InventoryStackRequest.Action> actions = List.copyOf(actionFactory.apply(requestId));
         if (actions.isEmpty()) {
             return false;
         }
         this.nextRequestId -= 2; // Bedrock client request IDs are negative odd numbers
-        this.pendingRequests.put(requestId, new PendingRequest(snapshots, actions));
+        this.pendingRequests.put(requestId, new PendingRequest(snapshots, actions, javaClientManaged));
         final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
         final InventoryStackRequestType requestType = new InventoryStackRequestType(runtimeId -> itemRewriter.getItems().inverse().get(runtimeId));
         final PacketWrapper request = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, this.user());
@@ -79,6 +91,7 @@ public final class InventoryRequestTracker extends StoredObject {
         }
     }
 
-    public record PendingRequest(Map<Container, BedrockItem[]> snapshots, List<InventoryStackRequest.Action> actions) {
+    public record PendingRequest(Map<Container, BedrockItem[]> snapshots, List<InventoryStackRequest.Action> actions,
+                                 boolean javaClientManaged) {
     }
 }
