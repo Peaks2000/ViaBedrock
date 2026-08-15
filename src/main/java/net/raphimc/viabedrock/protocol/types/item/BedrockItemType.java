@@ -29,39 +29,33 @@ public class BedrockItemType extends Type<BedrockItem> {
 
     private final int blockingId;
     private final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates;
-    private final boolean writeItemNetId;
 
-    public BedrockItemType(final int blockingId, final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates, final boolean writeItemNetId) {
+    public BedrockItemType(final int blockingId, final Int2ObjectMap<IntSortedSet> blockItemValidBlockStates) {
         super(BedrockItem.class);
 
         this.blockingId = blockingId;
         this.blockItemValidBlockStates = blockItemValidBlockStates;
-        this.writeItemNetId = writeItemNetId;
     }
 
     @Override
     public BedrockItem read(ByteBuf buffer) {
         final int id = BedrockTypes.VAR_INT.read(buffer);
-        if (id == 0 || id == -1) {
-            return BedrockItem.empty();
-        }
-
-        final BedrockItem item = new BedrockItem(id);
+        final boolean empty = id == 0 || id == -1;
+        final BedrockItem item = empty ? BedrockItem.empty() : new BedrockItem(id);
         item.setAmount(buffer.readUnsignedShortLE());
         item.setData(BedrockTypes.UNSIGNED_VAR_INT.read(buffer));
-        /*if (buffer.readBoolean()) {
-            item.setNetId(BedrockTypes.VAR_INT.read(buffer));
-        }*/
         item.setBlockRuntimeId(BedrockTypes.VAR_INT.read(buffer));
 
-        final IntSortedSet validBlockStates = this.blockItemValidBlockStates.get(item.identifier());
-        if (validBlockStates != null) { // Block item
-            item.setData(0);
-            if (!validBlockStates.contains(item.blockRuntimeId())) {
-                item.setBlockRuntimeId(validBlockStates.firstInt());
+        if (!empty) {
+            final IntSortedSet validBlockStates = this.blockItemValidBlockStates.get(item.identifier());
+            if (validBlockStates != null) { // Block item
+                item.setData(0);
+                if (!validBlockStates.contains(item.blockRuntimeId())) {
+                    item.setBlockRuntimeId(validBlockStates.firstInt());
+                }
+            } else { // Meta item
+                item.setBlockRuntimeId(0);
             }
-        } else { // Meta item
-            item.setBlockRuntimeId(0);
         }
 
         final ByteBuf userData = buffer.readSlice(BedrockTypes.UNSIGNED_VAR_INT.read(buffer));
@@ -90,23 +84,15 @@ public class BedrockItemType extends Type<BedrockItem> {
 
     @Override
     public void write(ByteBuf buffer, BedrockItem value) {
-        if (value.isEmpty()) {
-            BedrockTypes.VAR_INT.write(buffer, 0);
+        final boolean empty = value.isEmpty();
+        BedrockTypes.VAR_INT.write(buffer, empty ? 0 : value.identifier());
+        buffer.writeShortLE(empty ? 0 : value.amount());
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, empty ? 0 : (int) value.data());
+        BedrockTypes.VAR_INT.write(buffer, empty ? 0 : value.blockRuntimeId());
+        if (empty) {
+            BedrockTypes.UNSIGNED_VAR_INT.write(buffer, 0);
             return;
         }
-
-        BedrockTypes.VAR_INT.write(buffer, value.identifier());
-        buffer.writeShortLE(value.amount());
-        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, (int) value.data());
-        if (this.writeItemNetId) {
-            buffer.writeBoolean(value.netId() != null);
-            if (value.netId() != null) {
-                BedrockTypes.VAR_INT.write(buffer, value.netId());
-            }
-        } else {
-            buffer.writeBoolean(false);
-        }
-        BedrockTypes.VAR_INT.write(buffer, value.blockRuntimeId());
 
         final ByteBuf userData = buffer.alloc().buffer();
         if (value.tag() != null) {

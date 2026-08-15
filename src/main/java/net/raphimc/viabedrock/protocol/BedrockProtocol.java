@@ -78,6 +78,19 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
             ClientboundBedrockPackets.START_GAME
     );
 
+    private static final EnumSet<ClientboundBedrockPackets> PRE_PLAY_STATE_QUEUE = EnumSet.of(
+            ClientboundBedrockPackets.UPDATE_ADVENTURE_SETTINGS,
+            ClientboundBedrockPackets.UPDATE_ABILITIES,
+            ClientboundBedrockPackets.CREATIVE_CONTENT,
+            ClientboundBedrockPackets.SET_PLAYER_GAME_TYPE,
+            ClientboundBedrockPackets.SET_DEFAULT_GAME_TYPE,
+            ClientboundBedrockPackets.UPDATE_PLAYER_GAME_TYPE,
+            ClientboundBedrockPackets.INVENTORY_CONTENT,
+            ClientboundBedrockPackets.INVENTORY_SLOT,
+            ClientboundBedrockPackets.PLAYER_HOTBAR,
+            ClientboundBedrockPackets.PLAYER_LIST
+    );
+
     static {
         BEFORE_PLAY_STATE_WHITELIST.addAll(LOGIN_STATE_WHITELIST);
     }
@@ -151,12 +164,14 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
         user.put(new ResourcePackDownloadTracker());
         user.put(new BlobCache(user));
         user.put(new PacketSyncStorage(user));
+        user.put(new PrePlayPacketQueue(user));
         user.put(new ChannelStorage());
         user.put(new PlayerListStorage());
         user.put(new ScoreboardTracker());
         user.put(new InventoryTracker(user));
         user.put(new InventoryTransactionRewriter(user));
         user.put(new InventoryRequestTracker(user));
+        user.put(new CreativeContentStorage(user));
         user.put(new CraftingRecipeStorage(user));
         user.put(new BreakingTracker(user));
 
@@ -194,6 +209,12 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
                 serverState = State.CONFIGURATION;
             }
             if (serverState != State.PLAY && !BEFORE_PLAY_STATE_WHITELIST.contains(packet)) { // Bedrock client ignores most packets before receiving the START_GAME packet
+                if (serverState == State.CONFIGURATION && PRE_PLAY_STATE_QUEUE.contains(packet)) {
+                    final ByteBuf input = ((PacketWrapperImpl) wrapper).getInputBuffer();
+                    if (wrapper.user().get(PrePlayPacketQueue.class).enqueue(packet, input)) {
+                        throw CancelException.generate();
+                    }
+                }
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received packet " + packet + " outside PLAY state. Ignoring it.");
                 throw CancelException.generate();
             }

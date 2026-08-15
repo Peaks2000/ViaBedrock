@@ -392,6 +392,7 @@ public class JoinPackets {
                     }
 
                     handleJavaClientGameJoin(wrapper.user());
+                    wrapper.user().get(PrePlayPacketQueue.class).replay();
 
                     final PacketWrapper requestChunkRadius = PacketWrapper.create(ServerboundBedrockPackets.REQUEST_CHUNK_RADIUS, wrapper.user());
                     requestChunkRadius.write(BedrockTypes.VAR_INT, wrapper.user().get(ClientSettingsStorage.class).viewDistance()); // radius

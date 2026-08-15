@@ -77,8 +77,10 @@ import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPack
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
+import net.raphimc.viabedrock.protocol.data.enums.java.generated.GameMode;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
+import net.raphimc.viabedrock.protocol.model.InventoryStackRequest;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.*;
@@ -87,6 +89,8 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 
@@ -274,6 +278,31 @@ public class InventoryPackets {
         protocol.registerClientbound(ClientboundBedrockPackets.CRAFTING_DATA, null, wrapper -> {
             wrapper.cancel();
             wrapper.user().get(CraftingRecipeStorage.class).read(wrapper);
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.CREATIVE_CONTENT, null, wrapper -> {
+            wrapper.cancel();
+            final ItemRewriter itemRewriter = wrapper.user().get(ItemRewriter.class);
+            final CreativeContentStorage creativeContent = wrapper.user().get(CreativeContentStorage.class);
+            creativeContent.clear();
+
+            final int groupCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+            for (int i = 0; i < groupCount; i++) {
+                // CreativeContent was converted to Cereal in protocol 2168. The category
+                // changed from a fixed little-endian int to its generated uint8 enum.
+                wrapper.read(Types.UNSIGNED_BYTE); // category
+                wrapper.read(BedrockTypes.STRING); // name
+                // CreativeContent uses NetworkItemInstanceDescriptorData in 2168, not the
+                // similarly named NetworkItemStackDescriptorData used by inventory slots.
+                wrapper.read(itemRewriter.itemType()); // icon
+            }
+
+            final int itemCount = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+            for (int i = 0; i < itemCount; i++) {
+                final int networkId = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+                final BedrockItem bedrockItem = wrapper.read(itemRewriter.itemType());
+                wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // group index
+                creativeContent.add(networkId, bedrockItem, itemRewriter.javaItem(bedrockItem.copy()));
+            }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.ITEM_STACK_RESPONSE, null, wrapper -> {
             wrapper.cancel();
@@ -583,11 +612,77 @@ public class InventoryPackets {
             final Item item = wrapper.read(VersionedTypes.V26_2.lengthPrefixedItem); // item
 
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
-            if (inventoryTracker.getPendingCloseContainer() != null) {
-                wrapper.cancel();
+            if (inventoryTracker.getPendingCloseContainer() != null
+                || wrapper.user().get(EntityTracker.class).getClientPlayer().javaGameMode() != GameMode.CREATIVE) {
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
                 return;
             }
-            PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+
+            final CreativeSlot target = creativeSlot(inventoryTracker, slot);
+            if (item.isEmpty()) {
+                if (target == null) {
+                    if (slot != -1) PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                    return;
+                }
+
+                final BedrockItem existingItem = target.container().getItem(target.slot());
+                if (existingItem.isEmpty()) return;
+
+                final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
+                final boolean sent = wrapper.user().get(InventoryRequestTracker.class).send(requestId -> {
+                    snapshots.put(target.container(), target.container().getItems());
+                    target.container().setItem(target.slot(), BedrockItem.empty());
+                    return List.of(new InventoryStackRequest.Destroy(
+                        existingItem.amount(), requestSlot(target.container(), target.slot(), existingItem)
+                    ));
+                }, snapshots);
+                if (!sent) PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                return;
+            }
+
+            if (item.amount() < 1 || item.amount() > 64 || (target == null && slot != -1)) {
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                return;
+            }
+
+            final CreativeContentStorage.CreativeItem creativeItem = wrapper.user().get(CreativeContentStorage.class).find(item);
+            if (creativeItem == null) {
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                return;
+            }
+
+            final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
+            final boolean sent = wrapper.user().get(InventoryRequestTracker.class).send(requestId -> {
+                final BedrockItem output = creativeItem.bedrockItem();
+                final List<InventoryStackRequest.Action> actions = new ArrayList<>();
+                actions.add(new InventoryStackRequest.CraftCreative(creativeItem.networkId(), 1));
+                actions.add(new InventoryStackRequest.CraftResultsDeprecated(List.of(output.copy()), 1));
+
+                final InventoryStackRequest.Slot createdOutput = new InventoryStackRequest.Slot(
+                    new FullContainerName(ContainerEnumName.CreatedOutputContainer, null), 50, requestId
+                );
+                if (target == null) {
+                    actions.add(new InventoryStackRequest.Drop(output.amount(), createdOutput, false));
+                    return actions;
+                }
+
+                snapshots.put(target.container(), target.container().getItems());
+                final BedrockItem existingItem = target.container().getItem(target.slot());
+                if (!existingItem.isEmpty()) {
+                    actions.add(new InventoryStackRequest.Destroy(
+                        existingItem.amount(), requestSlot(target.container(), target.slot(), existingItem)
+                    ));
+                }
+                actions.add(new InventoryStackRequest.Take(
+                    output.amount(), createdOutput, requestSlot(target.container(), target.slot(), existingItem)
+                ));
+
+                final BedrockItem predictedItem = output.copy();
+                predictedItem.setNetId(requestId);
+                target.container().setItem(target.slot(), predictedItem);
+                return actions;
+            }, snapshots);
+            if (!sent) PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
         });
         protocol.registerServerbound(ServerboundPackets26_1.CUSTOM_CLICK_ACTION, ServerboundBedrockPackets.MODAL_FORM_RESPONSE, wrapper -> {
             final String id = wrapper.read(Types.STRING); // id
@@ -708,6 +803,29 @@ public class InventoryPackets {
                 dialog.getInputs().add(new Input("dummy", new BooleanInput(TextUtil.stringToTextComponent(text))));
             }
         }
+    }
+
+    private static CreativeSlot creativeSlot(final InventoryTracker inventoryTracker, final short javaSlot) {
+        if (javaSlot >= 1 && javaSlot <= 4) {
+            return new CreativeSlot(inventoryTracker.getHudContainer(), javaSlot + 27);
+        }
+        if (javaSlot >= 5 && javaSlot <= 8) {
+            return new CreativeSlot(inventoryTracker.getArmorContainer(), javaSlot - 5);
+        }
+        if (javaSlot >= 9 && javaSlot <= 44) {
+            return new CreativeSlot(inventoryTracker.getInventoryContainer(), inventoryTracker.getInventoryContainer().bedrockSlot(javaSlot));
+        }
+        if (javaSlot == 45) {
+            return new CreativeSlot(inventoryTracker.getOffhandContainer(), 0);
+        }
+        return null;
+    }
+
+    private static InventoryStackRequest.Slot requestSlot(final Container container, final int slot, final BedrockItem item) {
+        return new InventoryStackRequest.Slot(container.getFullContainerName(slot), slot, item.netId() != null ? item.netId() : 0);
+    }
+
+    private record CreativeSlot(Container container, int slot) {
     }
 
 }

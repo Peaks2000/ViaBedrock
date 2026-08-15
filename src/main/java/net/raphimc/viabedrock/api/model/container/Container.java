@@ -38,6 +38,7 @@ import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,6 +53,8 @@ public abstract class Container {
     protected final BlockPosition position;
     protected final BedrockItem[] items;
     protected final Set<String> validBlockTags;
+    private int quickCraftType = -1;
+    private final Set<Integer> quickCraftSlots = new LinkedHashSet<>();
 
     public Container(final UserConnection user, final byte containerId, final ContainerType type, final TextComponent title, final BlockPosition position, final int size, final String... validBlockTags) {
         this.user = user;
@@ -74,12 +77,14 @@ public abstract class Container {
     }
 
     public boolean handleClick(final int revision, final short slot, final byte button, final ContainerInput action) {
-        if (slot == -1) {
-            return false;
-        }
-
         final InventoryTracker inventoryTracker = this.user.get(InventoryTracker.class);
         final InventoryRequestTracker requestTracker = this.user.get(InventoryRequestTracker.class);
+        if (action == ContainerInput.QUICK_CRAFT) {
+            return this.handleQuickCraft(slot, button, inventoryTracker, requestTracker);
+        }
+        this.resetQuickCraft();
+        if (slot == -1) return false;
+
         final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
         final boolean handled = requestTracker.send(requestId -> {
             this.snapshot(snapshots, inventoryTracker.getHudContainer());
@@ -102,6 +107,108 @@ public abstract class Container {
             PacketFactory.sendJavaContainerSetContent(this.user, this);
         }
         return handled;
+    }
+
+    private boolean handleQuickCraft(final short javaSlot, final byte button, final InventoryTracker tracker,
+                                     final InventoryRequestTracker requestTracker) {
+        final int buttonValue = Byte.toUnsignedInt(button);
+        final int stage = buttonValue & 3;
+        final int type = (buttonValue >> 2) & 3;
+        final Container cursor = tracker.getHudContainer();
+
+        if (stage == 0) { // Start drag
+            this.resetQuickCraft();
+            if (type > 1 || cursor.getItem(0).isEmpty()) return false; // Middle-drag is creative-only.
+            this.quickCraftType = type;
+            return true;
+        }
+        if (type != this.quickCraftType) {
+            this.resetQuickCraft();
+            return false;
+        }
+        if (stage == 1) { // Add hovered slot
+            final BedrockItem cursorItem = cursor.getItem(0);
+            if (cursorItem.isEmpty()) {
+                this.resetQuickCraft();
+                return false;
+            }
+            if (javaSlot < 0 || this.quickCraftSlots.size() >= cursorItem.amount()) return true;
+
+            final SlotRef target = this.resolveJavaSlot(javaSlot, tracker);
+            if (target == null || (target.container() == cursor && target.slot() == 0)) return true;
+            final BedrockItem targetItem = target.container().getItem(target.slot());
+            if (targetItem.isEmpty()
+                || (!targetItem.isDifferent(cursorItem) && targetItem.amount() < this.maxStackSize(cursorItem))) {
+                this.quickCraftSlots.add((int) javaSlot);
+            }
+            return true;
+        }
+        if (stage != 2) {
+            this.resetQuickCraft();
+            return false;
+        }
+
+        final List<Integer> javaSlots = List.copyOf(this.quickCraftSlots);
+        final int completedType = this.quickCraftType;
+        this.resetQuickCraft();
+        if (javaSlots.isEmpty()) return true;
+
+        final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
+        final boolean handled = requestTracker.send(requestId ->
+            this.finishQuickCraft(javaSlots, completedType, tracker, snapshots, requestId), snapshots
+        );
+        if (handled && (this instanceof InventoryContainer || this instanceof CraftingTableContainer)) {
+            this.updateCraftingOutput(tracker);
+            PacketFactory.sendJavaContainerSetContent(this.user, this);
+        }
+        return handled;
+    }
+
+    private List<InventoryStackRequest.Action> finishQuickCraft(final List<Integer> javaSlots, final int type,
+                                                                final InventoryTracker tracker,
+                                                                final Map<Container, BedrockItem[]> snapshots,
+                                                                final int requestId) {
+        final Container cursor = tracker.getHudContainer();
+        BedrockItem cursorItem = cursor.getItem(0);
+        if (cursorItem.isEmpty()) return List.of();
+
+        final int placePerSlot = type == 0 ? cursorItem.amount() / javaSlots.size() : 1;
+        if (placePerSlot <= 0) return List.of();
+
+        final List<InventoryStackRequest.Action> actions = new ArrayList<>(javaSlots.size());
+        for (int javaSlot : javaSlots) {
+            if (cursorItem.isEmpty()) break;
+            final SlotRef target = this.resolveJavaSlot(javaSlot, tracker);
+            if (target == null || (target.container() == cursor && target.slot() == 0)) continue;
+
+            final BedrockItem targetItem = target.container().getItem(target.slot());
+            if (!targetItem.isEmpty() && targetItem.isDifferent(cursorItem)) continue;
+            final int capacity = targetItem.isEmpty()
+                ? this.maxStackSize(cursorItem) : this.maxStackSize(cursorItem) - targetItem.amount();
+            final int count = Math.min(Math.min(placePerSlot, capacity), cursorItem.amount());
+            if (count <= 0) continue;
+
+            this.snapshot(snapshots, cursor);
+            this.snapshot(snapshots, target.container());
+            actions.add(new InventoryStackRequest.Place(
+                count,
+                this.requestSlot(cursor, 0, cursorItem),
+                this.requestSlot(target.container(), target.slot(), targetItem)
+            ));
+
+            final BedrockItem placed = targetItem.isEmpty()
+                ? this.withAmount(cursorItem, count)
+                : this.withAmount(targetItem, targetItem.amount() + count);
+            target.container().setItem(target.slot(), this.markModified(placed, requestId));
+            cursorItem = this.markModified(this.withRemovedAmount(cursorItem, count), requestId);
+            cursor.setItem(0, cursorItem);
+        }
+        return actions;
+    }
+
+    private void resetQuickCraft() {
+        this.quickCraftType = -1;
+        this.quickCraftSlots.clear();
     }
 
     private boolean isCraftingInputSlot(final int javaSlot) {

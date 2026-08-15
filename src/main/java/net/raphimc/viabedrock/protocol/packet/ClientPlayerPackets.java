@@ -75,6 +75,11 @@ public class ClientPlayerPackets {
         PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.CHANGE_GAME_MODE, clientPlayer.javaGameMode().ordinal());
     };
 
+    private static final PacketHandler CLIENT_PLAYER_ABILITIES_UPDATE = wrapper -> {
+        final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
+        clientPlayer.setAbilities(clientPlayer.abilities());
+    };
+
     public static void register(final BedrockProtocol protocol) {
         protocol.registerClientbound(ClientboundBedrockPackets.RESPAWN, ClientboundPackets26_1.RESPAWN, wrapper -> {
             final Position3f position = wrapper.read(BedrockTypes.POSITION_3F); // position
@@ -203,6 +208,7 @@ public class ClientPlayerPackets {
                 });
                 handler(CLIENT_PLAYER_GAME_MODE_INFO_UPDATE);
                 handler(CLIENT_PLAYER_GAME_MODE_UPDATE);
+                handler(CLIENT_PLAYER_ABILITIES_UPDATE);
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.SET_DEFAULT_GAME_TYPE, null, new PacketHandlers() {
@@ -215,6 +221,7 @@ public class ClientPlayerPackets {
                 });
                 handler(CLIENT_PLAYER_GAME_MODE_INFO_UPDATE);
                 handler(CLIENT_PLAYER_GAME_MODE_UPDATE);
+                handler(CLIENT_PLAYER_ABILITIES_UPDATE);
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_PLAYER_GAME_TYPE, ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper -> {
@@ -227,19 +234,30 @@ public class ClientPlayerPackets {
             wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // tick
 
             final Pair<UUID, String> playerListEntry = playerList.getPlayer(entityUniqueId);
-            if (playerListEntry == null) {
+            final boolean isClientPlayer = entityUniqueId == clientPlayer.uniqueId()
+                || (playerListEntry != null && playerListEntry.key().equals(clientPlayer.javaUuid()));
+            final UUID javaUuid = isClientPlayer ? clientPlayer.javaUuid()
+                : playerListEntry != null ? playerListEntry.key() : null;
+            if (javaUuid == null) {
                 wrapper.cancel();
                 return;
             }
 
+            if (isClientPlayer) clientPlayer.setGameType(gameType);
+
             wrapper.write(Types.PROFILE_ACTIONS_ENUM1_21_4, BitSets.create(8, PlayerInfoUpdateAction.UPDATE_GAME_MODE)); // actions
             wrapper.write(Types.VAR_INT, 1); // length
-            wrapper.write(Types.UUID, playerListEntry.key()); // uuid
-            wrapper.write(Types.VAR_INT, GameTypeRewriter.getEffectiveGameMode(gameType, gameSession.getLevelGameType()).ordinal()); // game mode
+            wrapper.write(Types.UUID, javaUuid); // uuid
+            wrapper.write(Types.VAR_INT, isClientPlayer ? clientPlayer.javaGameMode().ordinal()
+                : GameTypeRewriter.getEffectiveGameMode(gameType, gameSession.getLevelGameType()).ordinal()); // game mode
 
-            if (playerListEntry.key().equals(clientPlayer.javaUuid())) {
-                clientPlayer.setGameType(gameType);
+            if (isClientPlayer) {
+                // Flush the player-info change before the game event. The Java client uses the latter to
+                // replace an open creative inventory screen when the local player becomes survival.
+                wrapper.send(BedrockProtocol.class);
+                wrapper.cancel();
                 CLIENT_PLAYER_GAME_MODE_UPDATE.handle(wrapper);
+                CLIENT_PLAYER_ABILITIES_UPDATE.handle(wrapper);
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_ADVENTURE_SETTINGS, null, wrapper -> {
@@ -620,6 +638,7 @@ public class ClientPlayerPackets {
                 });
                 handler(CLIENT_PLAYER_GAME_MODE_INFO_UPDATE);
                 handler(CLIENT_PLAYER_GAME_MODE_UPDATE);
+                handler(CLIENT_PLAYER_ABILITIES_UPDATE);
             }
         });
         protocol.registerServerbound(ServerboundPackets26_1.SWING, ServerboundBedrockPackets.ANIMATE, wrapper -> {

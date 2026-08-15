@@ -195,6 +195,14 @@ public class OtherPlayerPackets {
                 return;
             }
 
+            // A Bedrock death event sets the translated Java health metadata to zero. Remote
+            // players respawn through MovePlayer rather than the local Respawn packet handler,
+            // so restore their health here to clear Java's death pose before moving them.
+            if (mode == PlayerPositionModeComponent_PositionMode.Respawn && entity instanceof PlayerEntity player) {
+                player.setHealth(player.attributes().get("minecraft:health").maxValue());
+                player.sendAttribute("minecraft:health");
+            }
+
             wrapper.write(Types.VAR_INT, entity.javaId()); // entity id
             wrapper.write(Types.DOUBLE, (double) position.x()); // x
             wrapper.write(Types.DOUBLE, (double) position.y() - entity.eyeOffset()); // y

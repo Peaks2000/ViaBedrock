@@ -36,7 +36,7 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         }
     }
 
-    public sealed interface Action permits Take, Place, Swap, Drop, Consume, Create, CraftRecipe, CraftResultsDeprecated {
+    public sealed interface Action permits Take, Place, Swap, Drop, Destroy, Consume, Create, CraftRecipe, CraftCreative, CraftResultsDeprecated {
 
         ItemStackRequestActionType type();
 
@@ -95,6 +95,18 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         }
     }
 
+    public record Destroy(int count, Slot source) implements Action {
+        public Destroy {
+            validateStackCount(count);
+            Objects.requireNonNull(source, "source");
+        }
+
+        @Override
+        public ItemStackRequestActionType type() {
+            return ItemStackRequestActionType.Destroy;
+        }
+    }
+
     public record Consume(int count, Slot source) implements Action {
         public Consume {
             validateStackCount(count);
@@ -136,6 +148,25 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         @Override
         public int mappedType() {
             return 10; // Protocol 2168 removes the two deprecated item-container actions from the mapped enum.
+        }
+    }
+
+    public record CraftCreative(int creativeItemNetworkId, int requestedCrafts) implements Action {
+        public CraftCreative {
+            if (creativeItemNetworkId <= 0) {
+                throw new IllegalArgumentException("Creative item network ID must be positive: " + creativeItemNetworkId);
+            }
+            validateCraftCount(requestedCrafts);
+        }
+
+        @Override
+        public ItemStackRequestActionType type() {
+            return ItemStackRequestActionType.CraftCreative;
+        }
+
+        @Override
+        public int mappedType() {
+            return 12; // Protocol 2168 removes the two deprecated item-container actions from the mapped enum.
         }
     }
 

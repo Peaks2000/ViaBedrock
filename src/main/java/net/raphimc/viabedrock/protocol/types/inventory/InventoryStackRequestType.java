@@ -57,6 +57,9 @@ public final class InventoryStackRequestType extends Type<InventoryStackRequest>
             buffer.writeByte(drop.count());
             this.writeSlot(buffer, drop.source());
             buffer.writeBoolean(drop.randomly());
+        } else if (action instanceof InventoryStackRequest.Destroy destroy) {
+            buffer.writeByte(destroy.count());
+            this.writeSlot(buffer, destroy.source());
         } else if (action instanceof InventoryStackRequest.Consume consume) {
             buffer.writeByte(consume.count());
             this.writeSlot(buffer, consume.source());
@@ -65,6 +68,9 @@ public final class InventoryStackRequestType extends Type<InventoryStackRequest>
         } else if (action instanceof InventoryStackRequest.CraftRecipe craftRecipe) {
             BedrockTypes.UNSIGNED_VAR_INT.write(buffer, craftRecipe.recipeNetworkId());
             buffer.writeByte(craftRecipe.requestedCrafts());
+        } else if (action instanceof InventoryStackRequest.CraftCreative craftCreative) {
+            BedrockTypes.UNSIGNED_VAR_INT.write(buffer, craftCreative.creativeItemNetworkId());
+            buffer.writeByte(craftCreative.requestedCrafts());
         } else if (action instanceof InventoryStackRequest.CraftResultsDeprecated craftResults) {
             BedrockTypes.UNSIGNED_VAR_INT.write(buffer, craftResults.results().size());
             for (BedrockItem result : craftResults.results()) {
