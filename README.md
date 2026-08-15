@@ -1,3 +1,9 @@
+## What changed in my fork
+    -fixed bedrock crafting
+    -fixed creative menu
+    -thanks to github.com/Exterminate5573/ViaBedrock/pull/3
+
+
 # ViaBedrock
 ViaVersion addon to add support for Minecraft: Bedrock Edition servers.
 
