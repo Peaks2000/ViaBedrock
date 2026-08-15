@@ -32,7 +32,7 @@ public class HudContainer extends InventoryRedirectContainer {
 
     @Override
     public FullContainerName getFullContainerName(final int slot) {
-        if (slot >= 28 && slot <= 31) {
+        if (slot >= 28 && slot <= 40) {
             return new FullContainerName(ContainerEnumName.CraftingInputContainer, null);
         } else if (slot == 50) {
             return new FullContainerName(ContainerEnumName.CraftingOutputPreviewContainer, null);
@@ -43,7 +43,7 @@ public class HudContainer extends InventoryRedirectContainer {
     @Override
     public boolean setItem(final int slot, final BedrockItem item) {
         if (super.setItem(slot, item)) {
-            return slot == 0 || (slot >= 28 && slot <= 31) || slot == 50;
+            return slot == 0 || (slot >= 28 && slot <= 40) || slot == 50;
         } else {
             return false;
         }
@@ -53,6 +53,8 @@ public class HudContainer extends InventoryRedirectContainer {
     public int javaSlot(final int slot) {
         if (slot >= 28 && slot <= 31) {
             return slot - 27;
+        } else if (slot >= 32 && slot <= 40) {
+            return slot - 31;
         } else if (slot == 50) {
             return 0;
         } else {
