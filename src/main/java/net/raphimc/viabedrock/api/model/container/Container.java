@@ -95,13 +95,15 @@ public abstract class Container {
             }
             return switch (action) {
                 case PICKUP -> this.singleton(this.handlePickup(slot, button, inventoryTracker, snapshots, requestId));
+                case PICKUP_ALL -> this.handlePickupAll(slot, button, inventoryTracker, snapshots, requestId);
                 case SWAP -> this.singleton(this.handleHotbarSwap(slot, button, inventoryTracker, snapshots, requestId));
                 case QUICK_MOVE -> this.handleQuickMove(slot, inventoryTracker, snapshots, requestId);
                 case THROW -> this.singleton(this.handleThrow(slot, button, inventoryTracker, snapshots, requestId));
                 default -> List.of();
             };
         }, snapshots);
-        if (handled && this.isCraftingInputSlot(slot)) {
+        if (handled && (this.isCraftingInputSlot(slot)
+            || (action == ContainerInput.PICKUP_ALL && (this instanceof InventoryContainer || this instanceof CraftingTableContainer)))) {
             this.updateCraftingOutput(inventoryTracker);
             PacketFactory.sendJavaContainerSetContent(this.user, this);
         }
@@ -419,6 +421,60 @@ public abstract class Container {
             this.requestSlot(cursor, 0, cursorItem),
             this.requestSlot(target.container(), target.slot(), targetItem)
         );
+    }
+
+    private List<InventoryStackRequest.Action> handlePickupAll(final short clickedJavaSlot, final byte button,
+                                                               final InventoryTracker tracker,
+                                                               final Map<Container, BedrockItem[]> snapshots,
+                                                               final int requestId) {
+        if (button != 0 && button != 1) return List.of();
+
+        final Container cursor = tracker.getHudContainer();
+        BedrockItem cursorItem = cursor.getItem(0);
+        if (cursorItem.isEmpty() || cursorItem.amount() >= this.maxStackSize(cursorItem)) return List.of();
+
+        // Vanilla only starts pickup-all after the first click has emptied the double-clicked slot.
+        // Inventory requests are serialized, so that first Take has already been acknowledged here.
+        final SlotRef clicked = this.resolveJavaSlot(clickedJavaSlot, tracker);
+        if (clicked == null || !clicked.container().getItem(clicked.slot()).isEmpty()) return List.of();
+
+        final int javaSlotCount = this instanceof InventoryContainer || this instanceof CraftingTableContainer
+            ? 46 : this.size() + 36;
+        final int firstJavaSlot = button == 0 ? 0 : javaSlotCount - 1;
+        final int step = button == 0 ? 1 : -1;
+        final List<InventoryStackRequest.Action> actions = new ArrayList<>();
+
+        // Match Java's two-pass order: consolidate partial stacks first, then full stacks.
+        for (int pass = 0; pass < 2 && cursorItem.amount() < this.maxStackSize(cursorItem); pass++) {
+            for (int javaSlot = firstJavaSlot;
+                 javaSlot >= 0 && javaSlot < javaSlotCount && cursorItem.amount() < this.maxStackSize(cursorItem);
+                 javaSlot += step) {
+                if ((this instanceof InventoryContainer || this instanceof CraftingTableContainer) && javaSlot == 0) {
+                    continue; // Crafting output requires recipe actions, never a direct Take.
+                }
+
+                final SlotRef source = this.resolveJavaSlot(javaSlot, tracker);
+                if (source == null || (source.container() == cursor && source.slot() == 0)) continue;
+                final BedrockItem sourceItem = source.container().getItem(source.slot());
+                if (sourceItem.isEmpty() || sourceItem.isDifferent(cursorItem)) continue;
+                if (pass == 0 && sourceItem.amount() >= this.maxStackSize(sourceItem)) continue;
+
+                final int count = Math.min(sourceItem.amount(), this.maxStackSize(cursorItem) - cursorItem.amount());
+                if (count <= 0) continue;
+
+                this.snapshot(snapshots, source.container());
+                actions.add(new InventoryStackRequest.Take(
+                    count,
+                    this.requestSlot(source.container(), source.slot(), sourceItem),
+                    this.requestSlot(cursor, 0, cursorItem)
+                ));
+
+                source.container().setItem(source.slot(), this.markModified(this.withRemovedAmount(sourceItem, count), requestId));
+                cursorItem = this.markModified(this.withAmount(cursorItem, cursorItem.amount() + count), requestId);
+                cursor.setItem(0, cursorItem);
+            }
+        }
+        return actions;
     }
 
     private InventoryStackRequest.Action handleHotbarSwap(final short javaSlot, final byte button, final InventoryTracker tracker,
