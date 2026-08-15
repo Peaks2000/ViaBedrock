@@ -37,6 +37,8 @@ import net.raphimc.viabedrock.protocol.data.enums.java.EntityEvent;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.CustomChatCompletionsAction;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.storage.GameRulesStorage;
+import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
@@ -82,6 +84,12 @@ public class PacketFactory {
         gameEvent.write(Types.UNSIGNED_BYTE, (short) event.ordinal()); // event id
         gameEvent.write(Types.FLOAT, value); // value
         gameEvent.send(BedrockProtocol.class);
+    }
+
+    public static void sendJavaTime(final UserConnection user, final long bedrockTime) {
+        final PacketWrapper setTime = PacketWrapper.create(ClientboundPackets26_1.SET_TIME, user);
+        writeJavaTime(setTime, bedrockTime);
+        setTime.send(BedrockProtocol.class);
     }
 
     public static void sendJavaEntityEvent(final UserConnection user, final Entity entity, final EntityEvent event) {
@@ -154,6 +162,19 @@ public class PacketFactory {
         wrapper.write(Types.VAR_INT, 0); // revision
         wrapper.write(VersionedTypes.V26_2.itemArray, container.getJavaItems()); // items
         wrapper.write(VersionedTypes.V26_2.item, wrapper.user().get(InventoryTracker.class).getHudContainer().getJavaItem(0)); // cursor item
+    }
+
+    public static void writeJavaTime(final PacketWrapper wrapper, final long bedrockTime) {
+        final long totalTicks = bedrockTime >= 0L ? bedrockTime : Math.floorMod(bedrockTime, 24000L);
+        final long gameTime = wrapper.user().get(GameSessionStorage.class).getLevelTime();
+        final boolean daylightCycle = wrapper.user().get(GameRulesStorage.class).getGameRule("doDayLightCycle");
+
+        wrapper.write(Types.LONG, gameTime); // game time
+        wrapper.write(Types.VAR_INT, 1); // clock update count
+        wrapper.write(Types.VAR_INT, 0); // registry id (overworld clock)
+        wrapper.write(Types.VAR_LONG, totalTicks); // total ticks
+        wrapper.write(Types.FLOAT, 0F); // partial tick
+        wrapper.write(Types.FLOAT, daylightCycle ? 1F : 0F); // rate
     }
 
     public static void writeJavaLevelParticles(final PacketWrapper wrapper, final Position3f position, final BedrockMappingData.JavaParticle particle) {

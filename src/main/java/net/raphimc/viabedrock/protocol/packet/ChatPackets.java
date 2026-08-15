@@ -185,6 +185,16 @@ public class ChatPackets {
                 final boolean successful = wrapper.read(Types.BOOLEAN); // is successful
                 final String[] parameters = wrapper.read(BedrockTypes.STRING_ARRAY); // parameters
 
+                // Client-hosted worlds may acknowledge the command without broadcasting a SetTime packet.
+                if (successful && "commands.time.set".equals(messageId) && parameters.length > 0) {
+                    try {
+                        final long time = Long.parseLong(parameters[0]);
+                        PacketFactory.sendJavaTime(wrapper.user(), time);
+                    } catch (NumberFormatException e) {
+                        ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Invalid time value in successful Bedrock command output: " + parameters[0]);
+                    }
+                }
+
                 message.append(successful ? "§r" : "§c");
                 message.append(BedrockTranslator.translate(messageId, translator, parameters));
                 if (i != messageCount - 1) {
