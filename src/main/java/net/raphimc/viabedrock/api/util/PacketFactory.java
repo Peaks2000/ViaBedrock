@@ -79,6 +79,15 @@ public class PacketFactory {
         containerSetContent.send(BedrockProtocol.class);
     }
 
+    public static void sendJavaContainerSetSlot(final UserConnection user, final Container container, final int bedrockSlot) {
+        final PacketWrapper containerSetSlot = PacketWrapper.create(ClientboundPackets26_1.CONTAINER_SET_SLOT, user);
+        containerSetSlot.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
+        containerSetSlot.write(Types.VAR_INT, 0); // revision
+        containerSetSlot.write(Types.SHORT, (short) container.javaSlot(bedrockSlot)); // slot
+        containerSetSlot.write(VersionedTypes.V26_2.item, container.getJavaItem(bedrockSlot)); // item
+        containerSetSlot.send(BedrockProtocol.class);
+    }
+
     public static void sendJavaGameEvent(final UserConnection user, final GameEventType event, final float value) {
         final PacketWrapper gameEvent = PacketWrapper.create(ClientboundPackets26_1.GAME_EVENT, user);
         gameEvent.write(Types.UNSIGNED_BYTE, (short) event.ordinal()); // event id

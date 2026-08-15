@@ -189,6 +189,13 @@ public class InventoryPackets {
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
             final Container container = inventoryTracker.getContainerClientbound((byte) containerId, containerName, storageItem);
             if (container != null && container.setItems(items)) {
+                if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
+                    wrapper.cancel();
+                    for (int slot = 0; slot < container.size(); slot++) {
+                        PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                    }
+                    return;
+                }
                 final Container javaContainer = container.type() == ContainerType.HUD && inventoryTracker.getCurrentContainer() instanceof CraftingTableContainer
                     ? inventoryTracker.getCurrentContainer()
                     : container;
@@ -220,7 +227,13 @@ public class InventoryPackets {
                     // protocol pipelines retain the original packet mapping during dispatch, which can make
                     // the Java client decode or discard the rewritten full-content payload as a slot update.
                     wrapper.cancel();
-                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                    if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
+                        // Java owns the creative carried item locally. A full content packet includes
+                        // Bedrock's empty HUD cursor and erases armor/items from the mouse while moving them.
+                        PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                    } else {
+                        PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
+                    }
                     return;
                 } else {
                     final Container javaContainer = container.type() == ContainerType.HUD
@@ -753,6 +766,14 @@ public class InventoryPackets {
             return new CreativeSlot(inventoryTracker.getOffhandContainer(), 0);
         }
         return null;
+    }
+
+    private static boolean preserveCreativeCursor(final UserConnection user, final InventoryTracker inventoryTracker,
+                                                  final Container container) {
+        return user.get(EntityTracker.class).getClientPlayer().javaGameMode() == GameMode.CREATIVE
+            && (container == inventoryTracker.getInventoryContainer()
+                || container == inventoryTracker.getArmorContainer()
+                || container == inventoryTracker.getOffhandContainer());
     }
 
     private static void handleContainerClick(final UserConnection user, final int containerId, final int revision,

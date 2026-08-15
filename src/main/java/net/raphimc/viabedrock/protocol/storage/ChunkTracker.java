@@ -355,7 +355,10 @@ public class ChunkTracker extends StoredObject {
             entityTracker.removeItemFrame(blockPosition);
         }
 
-        if (prevBlockState != blockState) {
+        // Bedrock can resend the same generic bed state when its occupied appearance changes. Reapply
+        // the retained block-entity colour even when the palette ID itself did not change; otherwise
+        // the generic bed mapping leaks through as a white Java bed after sleeping.
+        if (prevBlockState != blockState || CustomBlockTags.BED.equals(tag)) {
             if (BlockEntityRewriter.isBlockEntity(tag)) {
                 final BedrockBlockEntity bedrockBlockEntity = this.getBlockEntity(blockPosition);
                 BlockEntity javaBlockEntity = null;

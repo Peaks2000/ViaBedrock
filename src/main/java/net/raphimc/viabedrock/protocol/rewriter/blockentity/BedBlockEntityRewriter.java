@@ -23,9 +23,13 @@ import com.viaversion.viaversion.api.minecraft.blockentity.BlockEntity;
 import com.viaversion.viaversion.api.minecraft.blockentity.BlockEntityImpl;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
 import net.raphimc.viabedrock.api.chunk.BlockEntityWithBlockState;
+import net.raphimc.viabedrock.api.model.BlockState;
+import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.enums.DyeColor;
 import net.raphimc.viabedrock.protocol.rewriter.BlockEntityRewriter;
 import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
+
+import java.util.Locale;
 
 public class BedBlockEntityRewriter implements BlockEntityRewriter.Rewriter {
 
@@ -34,10 +38,17 @@ public class BedBlockEntityRewriter implements BlockEntityRewriter.Rewriter {
         final CompoundTag bedrockTag = bedrockBlockEntity.tag();
 
         final DyeColor color = DyeColor.getByJavaId(bedrockTag.getByte("color", (byte) -1), DyeColor.RED);
-        int javaBlockState = user.get(ChunkTracker.class).getJavaBlockState(bedrockBlockEntity.position());
-        javaBlockState += color.javaId() * 16;
+        final int baseJavaBlockState = user.get(ChunkTracker.class).getJavaBlockState(bedrockBlockEntity.position());
+        final BlockState baseState = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(baseJavaBlockState);
+        final BlockState coloredState = coloredBedState(baseState, color);
+        final int javaBlockState = BedrockProtocol.MAPPINGS.getJavaBlockStates().getOrDefault(coloredState, baseJavaBlockState);
 
         return new BlockEntityWithBlockState(new BlockEntityImpl(bedrockBlockEntity.packedXZ(), bedrockBlockEntity.y(), -1, null), javaBlockState);
+    }
+
+    public static BlockState coloredBedState(final BlockState baseState, final DyeColor color) {
+        if (baseState == null || !baseState.identifier().endsWith("_bed")) return baseState;
+        return baseState.withIdentifier(color.name().toLowerCase(Locale.ROOT) + "_bed");
     }
 
 }

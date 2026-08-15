@@ -485,6 +485,25 @@ public class ClientPlayerPackets {
             final Set<InputFlag> inputFlags = EnumUtil.getEnumSetFromBitmask(InputFlag.class, wrapper.read(Types.BYTE), InputFlag::ordinal); // input flags
             clientPlayer.setInputFlags(inputFlags);
         });
+        protocol.registerServerbound(ServerboundPackets26_1.PADDLE_BOAT, null, wrapper -> {
+            wrapper.cancel();
+            wrapper.user().get(EntityTracker.class).getClientPlayer().setPaddling(
+                wrapper.read(Types.BOOLEAN), // left paddle
+                wrapper.read(Types.BOOLEAN) // right paddle
+            );
+        });
+        protocol.registerServerbound(ServerboundPackets26_1.MOVE_VEHICLE, null, wrapper -> {
+            wrapper.cancel();
+            final Position3f position = new Position3f(
+                wrapper.read(Types.DOUBLE).floatValue(),
+                wrapper.read(Types.DOUBLE).floatValue(),
+                wrapper.read(Types.DOUBLE).floatValue()
+            );
+            final float yaw = MathUtil.wrapDegrees(wrapper.read(Types.FLOAT));
+            final float pitch = wrapper.read(Types.FLOAT);
+            final boolean onGround = wrapper.read(Types.BOOLEAN);
+            wrapper.user().get(EntityTracker.class).getClientPlayer().updateVehicleMovement(position, yaw, pitch, onGround);
+        });
         protocol.registerServerbound(ServerboundPackets26_1.CLIENT_TICK_END, ServerboundBedrockPackets.PLAYER_AUTH_INPUT, wrapper -> {
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final Position3f prevPosition = clientPlayer.prevPosition();
@@ -548,16 +567,28 @@ public class ClientPlayerPackets {
             }
             if (clientPlayer.inputFlags().contains(InputFlag.SHIFT) && !prevInputFlags.contains(InputFlag.SHIFT)) {
                 clientPlayer.setSneaking(true);
+                clientPlayer.requestDismount();
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SneakPressedRaw, PlayerAuthInputPacketPayload_InputData.StartSneaking);
             }
             if (prevInputFlags.contains(InputFlag.SHIFT) && !clientPlayer.inputFlags().contains(InputFlag.SHIFT)) {
                 clientPlayer.setSneaking(false);
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SneakReleasedRaw, PlayerAuthInputPacketPayload_InputData.StopSneaking);
             }
+            if (clientPlayer.hasClientPredictedVehicle()) {
+                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.IsInClientPredictedVehicle);
+                if (clientPlayer.isPaddlingLeft()) {
+                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.PaddlingLeft);
+                }
+                if (clientPlayer.isPaddlingRight()) {
+                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.PaddlingRight);
+                }
+            }
 
             final Position3f positionDelta = clientPlayer.position().subtract(prevPosition);
             final Position3f velocity;
-            if (!clientPlayer.isInitiallySpawned() || clientPlayer.dimensionChangeInfo() != null || clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying)) {
+            if (!clientPlayer.isInitiallySpawned() || clientPlayer.dimensionChangeInfo() != null
+                || clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying)
+                || clientPlayer.hasClientPredictedVehicle()) {
                 velocity = positionDelta;
             } else {
                 float dx = positionDelta.x() * 0.98F;
@@ -612,9 +643,19 @@ public class ClientPlayerPackets {
                 wrapper.write(Types.BOOLEAN, false); // no Player Block Actions value
             }
             wrapper.write(Types.BOOLEAN, true); // Vehicle Rotation field present
-            wrapper.write(Types.BOOLEAN, false); // no Vehicle Rotation value
+            if (clientPlayer.hasClientPredictedVehicle()) {
+                wrapper.write(Types.BOOLEAN, true); // Vehicle Rotation value present
+                wrapper.write(BedrockTypes.POSITION_2F, clientPlayer.vehicleRotation()); // vehicle rotation
+            } else {
+                wrapper.write(Types.BOOLEAN, false); // no Vehicle Rotation value
+            }
             wrapper.write(Types.BOOLEAN, true); // Client Predicted Vehicle field present
-            wrapper.write(Types.BOOLEAN, false); // no Client Predicted Vehicle value
+            if (clientPlayer.hasClientPredictedVehicle()) {
+                wrapper.write(Types.BOOLEAN, true); // Client Predicted Vehicle value present
+                wrapper.write(BedrockTypes.VAR_LONG, clientPlayer.mountEntityRId()); // predicted vehicle runtime id
+            } else {
+                wrapper.write(Types.BOOLEAN, false); // no Client Predicted Vehicle value
+            }
             wrapper.write(BedrockTypes.POSITION_2F, new Position2f(0F, 0F)); // analog move vector
             wrapper.write(BedrockTypes.POSITION_3F, MathUtil.calculateCameraOrientation(clientPlayer.rotation().y(), clientPlayer.rotation().x())); // camera orientation
             wrapper.write(BedrockTypes.POSITION_2F, MathUtil.calculateMovementDirections(clientPlayer.authInputData(), false)); // raw move vector

@@ -26,6 +26,7 @@ import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPack
 import com.viaversion.viaversion.util.Pair;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.util.EnumUtil;
+import net.raphimc.viabedrock.api.util.MathUtil;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.experimental.ExperimentalPacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
@@ -37,10 +38,12 @@ import net.raphimc.viabedrock.protocol.data.enums.java.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.GameMode;
 import net.raphimc.viabedrock.protocol.model.EntityAttribute;
 import net.raphimc.viabedrock.protocol.model.PlayerAbilities;
+import net.raphimc.viabedrock.protocol.model.Position2f;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.GameTypeRewriter;
 import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.CommandsStorage;
+import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
 import net.raphimc.viabedrock.protocol.storage.PlayerListStorage;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
@@ -79,6 +82,9 @@ public class ClientPlayerEntity extends PlayerEntity {
 
     // Riding
     private boolean requestedDismount = false;
+    private boolean paddlingLeft;
+    private boolean paddlingRight;
+    private Position2f vehicleRotation;
 
     // Misc data
     private GameType gameType;
@@ -104,15 +110,70 @@ public class ClientPlayerEntity extends PlayerEntity {
         this.prevPosition = this.position;
         this.prevOnGround = this.onGround;
         this.prevInputFlags = this.inputFlags;
+    }
 
-        if (ViaBedrock.getConfig().shouldEnableExperimentalFeatures()) {
-            // TODO: Experimental
+    public void requestDismount() {
+        if (this.mountRuntimeId == -1 || this.requestedDismount) return;
 
-            if (this.mountRuntimeId != -1 && this.sneaking && !this.requestedDismount) {
-                // Dismount entity
-                ExperimentalPacketFactory.sendBedrockDismount(this.user, this.mountRuntimeId);
-                this.requestedDismount = true;
-            }
+        ExperimentalPacketFactory.sendBedrockDismount(this.user, this.mountRuntimeId);
+        this.requestedDismount = true;
+    }
+
+    public void setPaddling(final boolean left, final boolean right) {
+        this.paddlingLeft = left;
+        this.paddlingRight = right;
+    }
+
+    public boolean isPaddlingLeft() {
+        return this.paddlingLeft;
+    }
+
+    public boolean isPaddlingRight() {
+        return this.paddlingRight;
+    }
+
+    public void updateVehicleMovement(final Position3f position, final float javaYaw, final float javaPitch,
+                                      final boolean onGround) {
+        final Entity vehicle = this.user.get(EntityTracker.class).getEntityByRid(this.mountRuntimeId);
+        if (vehicle == null || !isBoat(vehicle)) {
+            this.vehicleRotation = null;
+            return;
+        }
+
+        vehicle.setPosition(position);
+        vehicle.setRotation(new Position3f(javaPitch, javaYaw, javaYaw));
+        vehicle.setOnGround(onGround);
+
+        // PlayerAuthInput uses the Bedrock actor position, while Java's vehicle packet contains the
+        // boat's unadjusted position. Bedrock boats use a 0.375 block network offset.
+        this.position = position.add(0F, 0.375F, 0F);
+        this.vehicleRotation = bedrockBoatRotation(javaYaw, javaPitch);
+    }
+
+    public boolean hasClientPredictedVehicle() {
+        return this.mountRuntimeId != -1 && this.vehicleRotation != null;
+    }
+
+    public Position2f vehicleRotation() {
+        return this.vehicleRotation;
+    }
+
+    public static Position2f bedrockBoatRotation(final float javaYaw, final float javaPitch) {
+        return new Position2f(javaPitch, MathUtil.wrapDegrees(javaYaw + 90F));
+    }
+
+    private static boolean isBoat(final Entity entity) {
+        return "minecraft:boat".equals(entity.type()) || "minecraft:chest_boat".equals(entity.type());
+    }
+
+    @Override
+    public void setMountEntityRId(final long runtimeId) {
+        super.setMountEntityRId(runtimeId);
+        if (runtimeId == -1) {
+            this.requestedDismount = false;
+            this.paddlingLeft = false;
+            this.paddlingRight = false;
+            this.vehicleRotation = null;
         }
     }
 
