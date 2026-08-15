@@ -594,33 +594,9 @@ public class InventoryPackets {
             final short slot = wrapper.read(Types.SHORT); // slot
             final byte button = wrapper.read(Types.BYTE); // button
             final ContainerInput action = ContainerInput.values()[wrapper.read(Types.VAR_INT)]; // action
-
-            final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
-            if (inventoryTracker.getPendingCloseContainer() != null) {
-                wrapper.cancel();
-                return;
-            }
-            final Container container = inventoryTracker.getContainerServerbound((byte) containerId);
-            if (container == null) {
-                if (containerId == ContainerID.CONTAINER_ID_INVENTORY.getValue()) {
-                    // Bedrock client can send multiple OpenInventory requests if the server doesn't respond, so this is fine here
-                    final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, wrapper.user());
-                    interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.OpenInventory.getValue()); // action
-                    interact.write(BedrockTypes.UNSIGNED_VAR_LONG, wrapper.user().get(EntityTracker.class).getClientPlayer().runtimeId()); // target entity runtime id
-                    interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
-                    interact.sendToServer(BedrockProtocol.class);
-                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
-                }
-
-                wrapper.cancel();
-                return;
-            }
-            if (!container.handleClick(revision, slot, button, action)) {
-                if (container.type() != ContainerType.INVENTORY) {
-                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
-                }
-                PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
-            }
+            final UserConnection user = wrapper.user();
+            user.get(InventoryRequestTracker.class).executeWhenIdle(() ->
+                handleContainerClick(user, containerId, revision, slot, button, action));
         });
         protocol.registerServerbound(ServerboundPackets26_1.SET_CREATIVE_MODE_SLOT, null, wrapper -> {
             wrapper.cancel();
@@ -764,6 +740,32 @@ public class InventoryPackets {
             return new CreativeSlot(inventoryTracker.getOffhandContainer(), 0);
         }
         return null;
+    }
+
+    private static void handleContainerClick(final UserConnection user, final int containerId, final int revision,
+                                             final short slot, final byte button, final ContainerInput action) {
+        final InventoryTracker inventoryTracker = user.get(InventoryTracker.class);
+        if (inventoryTracker.getPendingCloseContainer() != null) return;
+
+        final Container container = inventoryTracker.getContainerServerbound((byte) containerId);
+        if (container == null) {
+            if (containerId == ContainerID.CONTAINER_ID_INVENTORY.getValue()) {
+                // Bedrock client can send multiple OpenInventory requests if the server doesn't respond, so this is fine here.
+                final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, user);
+                interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.OpenInventory.getValue()); // action
+                interact.write(BedrockTypes.UNSIGNED_VAR_LONG, user.get(EntityTracker.class).getClientPlayer().runtimeId()); // target entity runtime id
+                interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
+                interact.sendToServer(BedrockProtocol.class);
+                PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
+            }
+            return;
+        }
+        if (!container.handleClick(revision, slot, button, action)) {
+            if (container.type() != ContainerType.INVENTORY) {
+                PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
+            }
+            PacketFactory.sendJavaContainerSetContent(user, container);
+        }
     }
 
     private static void handleCreativeSlot(final UserConnection user, final short slot, final Item item) {

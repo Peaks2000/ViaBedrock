@@ -61,8 +61,9 @@ public final class InventoryRequestTracker extends StoredObject {
 
     /**
      * Runs an inventory change only after all earlier requests have received a response.
-     * Creative clicks can produce several Java slot packets in one tick; serializing them
-     * prevents a later packet from referring to the client ID of a request that is rejected.
+     * Java can send the pickup and placement halves of a move before Bedrock acknowledges
+     * the first half. Serializing them prevents a later action from referring to a temporary
+     * client stack ID which Bedrock has not accepted yet.
      */
     public void executeWhenIdle(final Runnable request) {
         if (this.pendingRequests.isEmpty() && this.queuedRequests.isEmpty()) {
