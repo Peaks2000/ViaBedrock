@@ -722,8 +722,14 @@ public class WorldEffectPackets {
             }
             return true;
         }
-        return eventUniqueId == 0L && predictionTracker != null
+        return isMissingEntityUniqueId(eventUniqueId) && predictionTracker != null
             && predictionTracker.consumeLocalPlacementSound(position, nowNanos);
+    }
+
+    private static boolean isMissingEntityUniqueId(final long eventUniqueId) {
+        // Host packets use both zero and Bedrock's conventional -1 sentinel when the
+        // placement sound has no actor identity. Do not broaden this to other IDs.
+        return eventUniqueId == 0L || eventUniqueId == -1L;
     }
 
     private static SoundDefinitions.ConfiguredSound tryFindSound(final UserConnection user, final String soundEvent, final int data, final String entityIdentifier, final boolean isBabyMob) {
