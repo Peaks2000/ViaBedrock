@@ -289,8 +289,14 @@ public class InventoryPackets {
             if (container != null && container.setItems(items)) {
                 if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
                     wrapper.cancel();
-                    for (int slot = 0; slot < container.size(); slot++) {
-                        PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                    // Bedrock's HUD container owns its cursor. A full HUD-content update after a
+                    // rejected creative offhand request carries an empty cursor and would erase
+                    // the rejected Java item which the stack response just restored. There are no
+                    // HUD slots to publish while Java's creative inventory is the active player UI.
+                    if (container != inventoryTracker.getHudContainer()) {
+                        for (int slot = 0; slot < container.size(); slot++) {
+                            PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                        }
                     }
                     return;
                 }
@@ -376,17 +382,17 @@ public class InventoryPackets {
             boolean refreshCombinedPlayerInventory = false;
             for (Map.Entry<Container, Set<Integer>> entry : correctedSlots.entrySet()) {
                 final Container container = entry.getKey();
-                if (isPlayerInventoryContainer(inventoryTracker, container)) {
-                    if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
-                        // A normal Bedrock InventoryTransaction can immediately follow a rejected
-                        // creative offhand move. Publishing a combined player refresh here would
-                        // carry Bedrock's empty HUD cursor and erase the item we just restored.
+                if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
+                    // A normal Bedrock InventoryTransaction can immediately follow a rejected
+                    // creative offhand move. Publishing a combined player or HUD refresh here
+                    // would carry Bedrock's empty HUD cursor and erase the item we just restored.
+                    if (container != inventoryTracker.getHudContainer()) {
                         for (int slot : entry.getValue()) {
                             PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
                         }
-                    } else {
-                        refreshCombinedPlayerInventory = true;
                     }
+                } else if (isPlayerInventoryContainer(inventoryTracker, container)) {
+                    refreshCombinedPlayerInventory = true;
                 } else {
                     PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
                 }
@@ -917,14 +923,29 @@ public class InventoryPackets {
 
     private static boolean preserveCreativeCursor(final UserConnection user, final InventoryTracker inventoryTracker,
                                                   final Container container) {
-        return shouldPreserveCreativeCursor(
-            user.get(EntityTracker.class).getClientPlayer().javaGameMode(),
-            isPlayerInventoryContainer(inventoryTracker, container)
-        );
+        final GameMode javaGameMode = user.get(EntityTracker.class).getClientPlayer().javaGameMode();
+        return shouldPreserveCreativeCursor(javaGameMode, isPlayerInventoryContainer(inventoryTracker, container))
+            || shouldSuppressCreativeHudFullRefresh(
+                javaGameMode,
+                container == inventoryTracker.getHudContainer(),
+                inventoryTracker.getCurrentContainer() != null
+            );
     }
 
     public static boolean shouldPreserveCreativeCursor(final GameMode javaGameMode, final boolean playerInventoryContainer) {
         return javaGameMode == GameMode.CREATIVE && playerInventoryContainer;
+    }
+
+    /**
+     * Bedrock's player-only UI container owns the Bedrock cursor and redirects full Java content
+     * updates to container 0. While Java's creative inventory is active there is no tracked
+     * Bedrock container, and Java owns that cursor locally. Suppress the full HUD refresh so a
+     * trailing authoritative empty cursor cannot erase a rejected offhand item after rollback.
+     */
+    public static boolean shouldSuppressCreativeHudFullRefresh(final GameMode javaGameMode,
+                                                               final boolean hudContainer,
+                                                               final boolean bedrockContainerOpen) {
+        return javaGameMode == GameMode.CREATIVE && hudContainer && !bedrockContainerOpen;
     }
 
     private static boolean isPlayerInventoryContainer(final InventoryTracker inventoryTracker, final Container container) {
