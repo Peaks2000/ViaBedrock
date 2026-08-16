@@ -280,6 +280,26 @@ public class ItemRewriter extends StoredObject {
         return javaItems;
     }
 
+    /** Decodes the item-compound shape used by Bedrock trade offer NBT. */
+    public BedrockItem bedrockItemFromTag(final CompoundTag itemTag) {
+        if (itemTag == null || itemTag.isEmpty()) return BedrockItem.empty();
+
+        final String identifier = itemTag.getString("Name", "");
+        final Integer runtimeId = this.items.get(identifier);
+        if (runtimeId == null) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+                "Missing item identifier in Bedrock trade offer: " + identifier);
+            return BedrockItem.empty();
+        }
+
+        return new BedrockItem(
+            runtimeId,
+            itemTag.getShort("Damage", (short) 0),
+            itemTag.getByte("Count", (byte) 0),
+            itemTag.getCompoundTag("tag")
+        );
+    }
+
     public BedrockItem bedrockItem(final Item javaItem) {
         throw new UnsupportedOperationException("Translating Java items to Bedrock is not yet supported");
     }

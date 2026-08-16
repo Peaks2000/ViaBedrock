@@ -20,6 +20,7 @@ package net.raphimc.viabedrock.protocol.storage;
 import com.viaversion.viaversion.api.connection.StoredObject;
 import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.BlockPosition;
+import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 
@@ -64,6 +65,22 @@ public class BreakingTracker extends StoredObject {
     }
 
     public void updateCrackingInfo(Position3f position3f, long breakTime, boolean update) {
+        final ClientPlayerEntity clientPlayer = this.user().get(EntityTracker.class).getClientPlayer();
+        final BlockPosition blockPosition = new BlockPosition(
+            (int) Math.floor(position3f.x()), (int) Math.floor(position3f.y()), (int) Math.floor(position3f.z())
+        );
+        final BlockPlacementPredictionTracker predictionTracker = this.user().get(BlockPlacementPredictionTracker.class);
+        if (clientPlayer.blockBreakingInfo() != null
+            && isSameBlock(clientPlayer.blockBreakingInfo().position(), position3f)
+            || predictionTracker != null && predictionTracker.isPendingBreaking(blockPosition)) {
+            // Java renders its own local breaking progress. Translating Bedrock's level event
+            // at the same position adds a second, independently timed crack overlay and jitters.
+            // Keep suppressing it after Java's STOP packet until authoritative air confirms the
+            // break, because Bedrock can continue emitting crack progress during that interval.
+            this.stopCracking(position3f);
+            return;
+        }
+
         Map.Entry<Position3f, BlockCrackingInfo> entry = crackingInfoFromPosition(position3f);
         // The cracking animation won't start regardless of the "UpdateBlockCracking" info until the client actually receive "StartBlockCracking".
         if (entry == null && update) {
@@ -97,6 +114,12 @@ public class BreakingTracker extends StoredObject {
         }
 
         return null;
+    }
+
+    public static boolean isSameBlock(final BlockPosition blockPosition, final Position3f position) {
+        return blockPosition.x() == Math.floor(position.x())
+            && blockPosition.y() == Math.floor(position.y())
+            && blockPosition.z() == Math.floor(position.z());
     }
 
     private class BlockCrackingInfo {

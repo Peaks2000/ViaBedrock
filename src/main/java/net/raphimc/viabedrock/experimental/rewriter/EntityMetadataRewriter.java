@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.experimental.rewriter;
 
 import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.EulerAngle;
+import com.viaversion.viaversion.api.minecraft.VillagerData;
 import com.viaversion.viaversion.api.minecraft.entities.EntityTypes26_2;
 import com.viaversion.viaversion.api.minecraft.entitydata.EntityData;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
@@ -211,6 +212,7 @@ public class EntityMetadataRewriter {
                 int variant = readNumber(entityData).intValue();
 
                 switch (entity.javaType()) {
+                    case VILLAGER -> addVillagerData(entity, javaEntityData);
                     case WOLF -> {
                         int javaVariant = switch (variant) {
                             case 0 -> 4; // PALE
@@ -296,6 +298,11 @@ public class EntityMetadataRewriter {
                     }
                 }
 
+            }
+            case MARK_VARIANT, TRADE_TIER -> {
+                if (entity.javaType().is(EntityTypes26_2.VILLAGER)) {
+                    addVillagerData(entity, javaEntityData);
+                }
             }
             case COLOR_INDEX -> {
                 int javaColorIndex = readNumber(entityData).intValue();
@@ -660,5 +667,54 @@ public class EntityMetadataRewriter {
             case LONG -> (long) data.getValue();
             default -> throw new IllegalArgumentException("Unsupported number type: " + data.dataType());
         };
+    }
+
+    private static void addVillagerData(final Entity entity, final List<EntityData> javaEntityData) {
+        final int profession = storedNumber(entity, ActorDataIDs.VARIANT, 0);
+        final int region = storedNumber(entity, ActorDataIDs.MARK_VARIANT, 0);
+        final int tradeTier = storedNumber(entity, ActorDataIDs.TRADE_TIER, 0);
+        javaEntityData.add(new EntityData(
+            entity.getJavaEntityDataIndex(EntityDataFields.VILLAGER_DATA),
+            VersionedTypes.V26_2.entityDataTypes().villagerDataType,
+            villagerData(profession, region, tradeTier)
+        ));
+    }
+
+    private static int storedNumber(final Entity entity, final ActorDataIDs id, final int fallback) {
+        final EntityData data = entity.entityData().get(id);
+        return data != null ? readNumber(data).intValue() : fallback;
+    }
+
+    /** Converts Bedrock villager_v2 metadata to Java's registry IDs. */
+    public static VillagerData villagerData(final int bedrockProfession, final int bedrockRegion, final int bedrockTradeTier) {
+        final int javaProfession = switch (bedrockProfession) {
+            case 0 -> 0; // none
+            case 1 -> 5; // farmer
+            case 2 -> 6; // fisherman
+            case 3 -> 12; // shepherd
+            case 4 -> 7; // fletcher
+            case 5 -> 9; // librarian
+            case 6 -> 3; // cartographer
+            case 7 -> 4; // cleric
+            case 8 -> 1; // armorer
+            case 9 -> 14; // weaponsmith
+            case 10 -> 13; // toolsmith
+            case 11 -> 2; // butcher
+            case 12 -> 8; // leatherworker
+            case 13 -> 10; // mason
+            case 14 -> 11; // nitwit
+            default -> 0;
+        };
+        final int javaType = switch (bedrockRegion) {
+            case 0 -> 2; // plains
+            case 1 -> 0; // desert
+            case 2 -> 1; // jungle
+            case 3 -> 3; // savanna
+            case 4 -> 4; // snow
+            case 5 -> 5; // swamp
+            case 6 -> 6; // taiga
+            default -> 2;
+        };
+        return new VillagerData(javaType, javaProfession, Math.max(1, Math.min(5, bedrockTradeTier + 1)));
     }
 }

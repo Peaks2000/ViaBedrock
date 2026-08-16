@@ -45,6 +45,7 @@ import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.CommandsStorage;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
+import net.raphimc.viabedrock.protocol.storage.MovementPredictionTracker;
 import net.raphimc.viabedrock.protocol.storage.PlayerListStorage;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
@@ -71,6 +72,7 @@ public class ClientPlayerEntity extends PlayerEntity {
     // Server Authoritative Movement
     private Position3f prevPosition;
     private boolean prevOnGround;
+    private final MovementPredictionTracker movementPredictions = new MovementPredictionTracker();
     private final Set<PlayerAuthInputPacketPayload_InputData> authInputData = EnumSet.noneOf(PlayerAuthInputPacketPayload_InputData.class);
     private final List<AuthInputBlockAction> authInputBlockActions = new ArrayList<>();
     private Set<InputFlag> inputFlags = EnumSet.noneOf(InputFlag.class);
@@ -298,6 +300,25 @@ public class ClientPlayerEntity extends PlayerEntity {
 
     public boolean prevOnGround() {
         return this.prevOnGround;
+    }
+
+    public void recordMovementPrediction() {
+        this.movementPredictions.record(
+            this.age, this.position, this.onGround, this.horizontalCollision,
+            this.gameSession.getMovementRewindHistorySize()
+        );
+    }
+
+    public MovementPredictionTracker.Correction replayMovementCorrection(final long tick, final Position3f position,
+                                                                          final boolean onGround) {
+        // Shift is also significant while grounded: Java can briefly report an edge-crouched
+        // player as airborne, but its safe-walk position must not receive an old Bedrock Y
+        // correction. In flight the same continuous input stabilizes descent packet cadence.
+        final boolean verticalStabilizationInput = this.inputFlags.contains(InputFlag.SHIFT);
+        return this.movementPredictions.replay(
+            tick, position, onGround, this.age, this.position, this.onGround, this.horizontalCollision,
+            verticalStabilizationInput
+        );
     }
 
     public Set<PlayerAuthInputPacketPayload_InputData> authInputData() {

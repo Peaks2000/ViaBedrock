@@ -50,6 +50,12 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
 
     public void track(final int sequence, final BlockPosition clickedPosition,
                       final BlockPosition expectedUpdatePosition, final long nowNanos) {
+        this.track(sequence, clickedPosition, expectedUpdatePosition, nowNanos, PredictionKind.PLACEMENT);
+    }
+
+    private void track(final int sequence, final BlockPosition clickedPosition,
+                       final BlockPosition expectedUpdatePosition, final long nowNanos,
+                       final PredictionKind kind) {
         if (sequence <= this.lastSentAcknowledgement) {
             return;
         }
@@ -58,18 +64,46 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
                 return;
             }
         }
-        this.pendingPlacements.addLast(new PendingPlacement(sequence, clickedPosition, expectedUpdatePosition, nowNanos));
+        this.pendingPlacements.addLast(new PendingPlacement(
+            sequence, clickedPosition, expectedUpdatePosition, nowNanos, kind
+        ));
     }
 
-    public boolean confirm(final BlockPosition position) {
+    /**
+     * Block breaking uses the same cumulative Java acknowledgement protocol as placement,
+     * but only the broken position can confirm or resynchronize the prediction.
+     */
+    public void trackBreaking(final int sequence, final BlockPosition position, final long nowNanos) {
+        this.track(sequence, position, position, nowNanos, PredictionKind.BREAKING);
+    }
+
+    /**
+     * Confirms only the outcome Java predicted. Bedrock can reassert the original solid
+     * block while its server-authoritative break is still in progress; that is not a break
+     * confirmation and must not release Java's cumulative acknowledgement.
+     */
+    public boolean confirm(final BlockPosition position, final boolean authoritativeAir) {
         boolean matched = false;
         for (PendingPlacement pending : this.pendingPlacements) {
-            if (!pending.resolved && pending.matches(position)) {
+            if (!pending.resolved && pending.matches(position) && pending.accepts(authoritativeAir)) {
                 pending.resolved = true;
                 matched = true;
             }
         }
         return matched;
+    }
+
+    public boolean isPendingBreaking(final BlockPosition position) {
+        for (PendingPlacement pending : this.pendingPlacements) {
+            if (!pending.resolved && pending.kind == PredictionKind.BREAKING && pending.matches(position)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean shouldSuppressBreakingReassertion(final BlockPosition position, final boolean authoritativeAir) {
+        return !authoritativeAir && this.isPendingBreaking(position);
     }
 
     public int requestAcknowledgement(final int sequence) {
@@ -120,18 +154,30 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         private final BlockPosition clickedPosition;
         private final BlockPosition expectedUpdatePosition;
         private final long startedAtNanos;
+        private final PredictionKind kind;
         private boolean resolved;
 
         private PendingPlacement(final int sequence, final BlockPosition clickedPosition,
-                                 final BlockPosition expectedUpdatePosition, final long startedAtNanos) {
+                                 final BlockPosition expectedUpdatePosition, final long startedAtNanos,
+                                 final PredictionKind kind) {
             this.sequence = sequence;
             this.clickedPosition = clickedPosition;
             this.expectedUpdatePosition = expectedUpdatePosition;
             this.startedAtNanos = startedAtNanos;
+            this.kind = kind;
         }
 
         private boolean matches(final BlockPosition position) {
             return this.expectedUpdatePosition.equals(position);
         }
+
+        private boolean accepts(final boolean authoritativeAir) {
+            return this.kind == PredictionKind.BREAKING ? authoritativeAir : !authoritativeAir;
+        }
+    }
+
+    private enum PredictionKind {
+        PLACEMENT,
+        BREAKING
     }
 }

@@ -69,6 +69,7 @@ public class InventoryTracker extends StoredObject {
     private Container pendingCloseContainer = null;
     private IntObjectPair<Form> currentForm = null;
     private int playerInventoryRefreshTicks;
+    private boolean javaInventoryRefreshPending;
     private boolean playerInventoryResyncPending;
     private boolean offhandSwapPending;
     private boolean offhandSwapInProgress;
@@ -163,7 +164,10 @@ public class InventoryTracker extends StoredObject {
         }
 
         if (this.playerInventoryRefreshTicks > 0 && --this.playerInventoryRefreshTicks == 0) {
-            PacketFactory.sendJavaContainerSetContent(this.user(), this.inventoryContainer);
+            if (this.javaInventoryRefreshPending) {
+                this.javaInventoryRefreshPending = false;
+                PacketFactory.sendJavaContainerSetContent(this.user(), this.inventoryContainer);
+            }
             if (this.playerInventoryResyncPending) {
                 this.playerInventoryResyncPending = false;
                 this.requestPlayerInventoryResync();
@@ -198,12 +202,30 @@ public class InventoryTracker extends StoredObject {
         // predict pickups locally. Publish that prediction, then ask the host for the authoritative
         // slot contents and stack-network IDs. Coalesce nearby pickups into one round trip.
         this.playerInventoryRefreshTicks = PLAYER_INVENTORY_REFRESH_DELAY_TICKS;
+        this.javaInventoryRefreshPending = true;
         this.playerInventoryResyncPending = true;
     }
 
     public void schedulePlayerInventoryResync() {
+        this.schedulePlayerInventoryResync(true);
+    }
+
+    /**
+     * Schedules Bedrock's authoritative inventory resend.
+     *
+     * @param refreshJavaInventory whether to publish the tracked player inventory before requesting the resend;
+     *                             creative rejections must pass {@code false} because Java owns its cursor
+     */
+    public void schedulePlayerInventoryResync(final boolean refreshJavaInventory) {
         this.playerInventoryRefreshTicks = Math.max(this.playerInventoryRefreshTicks, 1);
+        // A Java-managed creative rejection has just restored its cursor explicitly. Cancel any
+        // queued full refresh rather than overwriting that cursor with Bedrock's empty HUD cursor.
+        this.javaInventoryRefreshPending = refreshJavaInventory;
         this.playerInventoryResyncPending = true;
+    }
+
+    public boolean isJavaInventoryRefreshPending() {
+        return this.javaInventoryRefreshPending;
     }
 
     public void requestOffhandSwap() {

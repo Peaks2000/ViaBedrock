@@ -18,7 +18,9 @@
 package net.raphimc.viabedrock.protocol.packet;
 
 import com.viaversion.nbt.tag.CompoundTag;
+import com.viaversion.nbt.tag.ListTag;
 import com.viaversion.nbt.tag.StringTag;
+import com.viaversion.nbt.tag.Tag;
 import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.BlockPosition;
 import com.viaversion.viaversion.api.minecraft.Holder;
@@ -62,6 +64,7 @@ import net.raphimc.viabedrock.api.model.container.ChestContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
 import net.raphimc.viabedrock.api.model.container.FurnaceContainer;
+import net.raphimc.viabedrock.api.model.container.MerchantContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
@@ -79,6 +82,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.GameMode;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
+import net.raphimc.viabedrock.protocol.model.BedrockTradeOffer;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
 import net.raphimc.viabedrock.protocol.model.InventoryStackRequest;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
@@ -114,7 +118,7 @@ public class InventoryPackets {
                 return;
             }
             final BlockPosition position = wrapper.read(BedrockTypes.BLOCK_POSITION); // position
-            wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
+            final long entityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
 
             if (inventoryTracker.isAnyScreenOpen()) {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Server tried to open container while another container is open");
@@ -141,6 +145,8 @@ public class InventoryPackets {
                 case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position, 27, blockTag);
                 case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"));
                 case FURNACE, BLAST_FURNACE, SMOKER -> container = new FurnaceContainer(wrapper.user(), containerId, type, title, position);
+                case TRADE -> container = new MerchantContainer(wrapper.user(), containerId,
+                    new TranslationComponent(entityUniqueId == -1L ? "entity.minecraft.wandering_trader" : "entity.minecraft.villager"));
                 case NONE, CAULDRON, JUKEBOX, ARMOR, HAND, HUD, DECORATED_POT -> { // Bedrock client can't open these containers
                     wrapper.cancel();
                     return;
@@ -157,7 +163,77 @@ public class InventoryPackets {
 
             wrapper.write(Types.VAR_INT, (int) containerId); // container id
             wrapper.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(type)); // type
-            wrapper.write(Types.TAG, TextUtil.textComponentToNbt(title)); // title
+            wrapper.write(Types.TAG, TextUtil.textComponentToNbt(container.title())); // title
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_TRADE, ClientboundPackets26_1.MERCHANT_OFFERS, wrapper -> {
+            final byte containerId = wrapper.read(Types.BYTE);
+            final byte rawType = wrapper.read(Types.BYTE);
+            wrapper.read(BedrockTypes.VAR_INT); // size
+            final int traderTier = wrapper.read(BedrockTypes.VAR_INT);
+            wrapper.read(BedrockTypes.VAR_LONG); // trader unique entity id
+            wrapper.read(BedrockTypes.VAR_LONG); // last trading player unique entity id
+            final String displayName = wrapper.read(BedrockTypes.STRING);
+            wrapper.read(Types.BOOLEAN); // use new trade screen
+            final boolean economyTrade = wrapper.read(Types.BOOLEAN);
+            final Tag offersTag = wrapper.read(BedrockTypes.NETWORK_TAG);
+
+            final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
+            Container current = inventoryTracker.getCurrentContainer();
+            if (rawType != ContainerType.TRADE.getValue() || !(offersTag instanceof CompoundTag offersCompound)) {
+                wrapper.cancel();
+                return;
+            }
+            if (current == null) {
+                final String translatedName = wrapper.user().get(ResourcePackStorage.class).getTexts().translate(displayName);
+                final MerchantContainer openedMerchant = new MerchantContainer(
+                    wrapper.user(), containerId, TextUtil.stringToTextComponent(translatedName)
+                );
+                inventoryTracker.setCurrentContainer(openedMerchant);
+                current = openedMerchant;
+
+                // Unlike ordinary block inventories, UpdateTrade itself is allowed to open the
+                // Bedrock trading UI. Publish Java's merchant screen before forwarding its offers.
+                final PacketWrapper openScreen = PacketWrapper.create(ClientboundPackets26_1.OPEN_SCREEN, wrapper.user());
+                openScreen.write(Types.VAR_INT, (int) containerId);
+                openScreen.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(ContainerType.TRADE));
+                openScreen.write(Types.TAG, TextUtil.textComponentToNbt(openedMerchant.title()));
+                openScreen.send(BedrockProtocol.class);
+            }
+            if (!(current instanceof MerchantContainer merchant) || merchant.containerId() != containerId) {
+                wrapper.cancel();
+                return;
+            }
+
+            final ItemRewriter itemRewriter = wrapper.user().get(ItemRewriter.class);
+            final List<BedrockTradeOffer> offers = new ArrayList<>();
+            final ListTag<CompoundTag> recipes = offersCompound.getListTag("Recipes", CompoundTag.class);
+            if (recipes != null) {
+                for (int index = 0; index < recipes.size(); index++) {
+                    final BedrockTradeOffer offer = BedrockTradeOffer.fromTag(recipes.get(index), itemRewriter, index + 1);
+                    if (!offer.costA().isEmpty() && !offer.result().isEmpty()) offers.add(offer);
+                }
+            }
+            merchant.setOffers(offers);
+
+            wrapper.write(Types.VAR_INT, (int) containerId);
+            wrapper.write(Types.VAR_INT, offers.size());
+            for (BedrockTradeOffer offer : offers) {
+                wrapper.write(VersionedTypes.V26_2.itemCost, itemRewriter.javaItem(offer.costA()));
+                wrapper.write(VersionedTypes.V26_2.item, itemRewriter.javaItem(offer.result()));
+                wrapper.write(VersionedTypes.V26_2.optionalItemCost,
+                    offer.costB().isEmpty() ? null : itemRewriter.javaItem(offer.costB()));
+                wrapper.write(Types.BOOLEAN, offer.outOfStock());
+                wrapper.write(Types.INT, offer.uses());
+                wrapper.write(Types.INT, offer.maxUses());
+                wrapper.write(Types.INT, offer.traderExperience());
+                wrapper.write(Types.INT, 0); // Bedrock already applies demand and discounts to buyA's count
+                wrapper.write(Types.FLOAT, 0F);
+                wrapper.write(Types.INT, 0);
+            }
+            wrapper.write(Types.VAR_INT, Math.max(1, Math.min(5, traderTier + 1)));
+            wrapper.write(Types.VAR_INT, 0); // current villager experience is not part of UpdateTrade
+            wrapper.write(Types.BOOLEAN, economyTrade);
+            wrapper.write(Types.BOOLEAN, economyTrade);
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CONTAINER_CLOSE, ClientboundPackets26_1.CONTAINER_CLOSE, new PacketHandlers() {
             @Override
@@ -379,9 +455,21 @@ public class InventoryPackets {
                     requestTracker.runQueuedRequests();
                     continue;
                 }
+                final boolean javaClientManagedFailure =
+                    result != ItemStackNetResult.Success && pending.javaClientManaged();
                 if (result != ItemStackNetResult.Success) {
+                    final String creativeModeContext;
+                    if (pending.actions().stream().anyMatch(InventoryStackRequest.CraftCreative.class::isInstance)) {
+                        final var clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
+                        creativeModeContext = "; javaGameMode=" + clientPlayer.javaGameMode()
+                            + ", playerGameType=" + clientPlayer.gameType()
+                            + ", levelGameType=" + wrapper.user().get(GameSessionStorage.class).getLevelGameType();
+                    } else {
+                        creativeModeContext = "";
+                    }
                     ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
-                        "Inventory request " + requestId + " failed: " + result + "; actions=" + pending.actions());
+                        "Inventory request " + requestId + " failed: " + result + creativeModeContext
+                            + "; actions=" + pending.actions());
                     for (var entry : pending.snapshots().entrySet()) {
                         entry.getKey().setItems(entry.getValue());
                         correctedContainers.add(entry.getKey());
@@ -389,14 +477,14 @@ public class InventoryPackets {
                     // The rollback restores our last prediction, which can itself be stale after
                     // client-predicted pickups or a game-mode transition. Ask Bedrock to resend
                     // the real slot contents before the next Java click reuses invalid stack IDs.
-                    inventoryTracker.schedulePlayerInventoryResync();
+                    inventoryTracker.schedulePlayerInventoryResync(!javaClientManagedFailure);
                 }
 
                 // Java's creative screen applies SetCreativeModeSlot changes itself and keeps its carried item
                 // only on the client. A successful Bedrock response must update our internal stack IDs without
                 // sending a full inventory packet: that packet would contain Bedrock's empty HUD cursor and make
-                // the item on Java's mouse disappear halfway through a move. Failed requests still use the normal
-                // rollback and full refresh below so an unaccepted prediction cannot become a real duplication.
+                // the item on Java's mouse disappear halfway through a move. Failed requests restore the affected
+                // slots and Java cursor individually so an unaccepted prediction cannot become a real duplication.
                 final boolean javaClientManagedSuccess = result == ItemStackNetResult.Success && pending.javaClientManaged();
 
                 // Successful stack responses carry authoritative amounts and stack-network IDs.
@@ -427,12 +515,21 @@ public class InventoryPackets {
                     correctedContainers.add(container);
                 }
 
-                final boolean javaClientManagedFailure = result != ItemStackNetResult.Success && pending.javaClientManaged();
                 if (javaClientManagedFailure) {
-                    // Preserve Java's creative cursor while restoring rejected slots.
-                    for (Container container : correctedContainers) {
-                        for (int slot = 0; slot < container.size(); slot++) {
-                            PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                    if (pending.javaCursorOnFailure() != null) {
+                        // Minecraft 26.2 deliberately ignores SET_CURSOR_ITEM while its creative
+                        // inventory screen is open. Restore the combined player inventory and the
+                        // rejected carried item atomically instead; the creative menu delegates its
+                        // carried stack to that player inventory menu, so the dragged item survives.
+                        PacketFactory.sendJavaContainerSetContent(
+                            wrapper.user(), inventoryTracker.getInventoryContainer(), pending.javaCursorOnFailure());
+                    } else {
+                        // An empty creative update has no carried item to restore. Publish only its
+                        // rejected slots so Bedrock's empty HUD cursor cannot clear another drag.
+                        for (Container container : correctedContainers) {
+                            for (int slot = 0; slot < container.size(); slot++) {
+                                PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                            }
                         }
                     }
                 } else if (!javaClientManagedSuccess) {
@@ -655,6 +752,12 @@ public class InventoryPackets {
             user.get(InventoryRequestTracker.class).executeWhenIdle(() ->
                 handleContainerClick(user, containerId, revision, slot, button, action));
         });
+        protocol.registerServerbound(ServerboundPackets26_1.SELECT_TRADE, null, wrapper -> {
+            wrapper.cancel();
+            final int index = wrapper.read(Types.VAR_INT);
+            final Container current = wrapper.user().get(InventoryTracker.class).getCurrentContainer();
+            if (current instanceof MerchantContainer merchant) merchant.selectTrade(index);
+        });
         protocol.registerServerbound(ServerboundPackets26_1.SET_CREATIVE_MODE_SLOT, null, wrapper -> {
             wrapper.cancel();
             final short slot = wrapper.read(Types.SHORT); // slot
@@ -873,6 +976,10 @@ public class InventoryPackets {
             PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
             return;
         }
+        if (target != null && isCreativeInventoryEcho(
+            target.container().getItem(target.slot()), creativeItem.bedrockItem())) {
+            return;
+        }
 
         final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
         final boolean sent = user.get(InventoryRequestTracker.class).send(requestId -> {
@@ -916,8 +1023,19 @@ public class InventoryPackets {
             predictedItem.setNetId(requestId);
             target.container().setPredictedItem(target.slot(), predictedItem);
             return actions;
-        }, snapshots, true);
+        }, snapshots, true, target != null ? item : null);
         if (!sent) PacketFactory.sendJavaContainerSetContent(user, inventoryTracker.getInventoryContainer());
+    }
+
+    /**
+     * Java can echo an already-populated creative slot with components that do not round-trip
+     * exactly through item translation. Compare the authoritative Bedrock representation so
+     * opening the creative screen does not manufacture a queue of redundant CraftCreative requests.
+     */
+    public static boolean isCreativeInventoryEcho(final BedrockItem trackedItem, final BedrockItem creativeItem) {
+        return trackedItem != null && creativeItem != null
+            && trackedItem.amount() == creativeItem.amount()
+            && !trackedItem.isDifferent(creativeItem);
     }
 
     private static InventoryStackRequest.Slot requestSlot(final Container container, final int slot, final BedrockItem item) {

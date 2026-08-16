@@ -52,6 +52,7 @@ import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.*;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -202,8 +203,10 @@ public class ClientPlayerPackets {
                         return;
                     }
 
-                    clientPlayer.setPosition(position);
-                    clientPlayer.setOnGround(onGround);
+                    final MovementPredictionTracker.Correction correction =
+                        clientPlayer.replayMovementCorrection(tick, position, onGround);
+                    clientPlayer.setPosition(correction.position());
+                    clientPlayer.setOnGround(correction.onGround());
                     clientPlayer.writePlayerPositionPacketToClient(wrapper, Relative.union(Relative.ROTATION, Relative.VELOCITY), true);
                 }
                 case Vehicle -> wrapper.cancel();
@@ -365,6 +368,14 @@ public class ClientPlayerPackets {
                 case STOP_DESTROY_BLOCK -> {
                     clientPlayer.cancelNextSwingPacket();
                     clientPlayer.setBlockBreakingInfo(null);
+
+                    if (sequence > 0) {
+                        // Keep Java's predicted air until Bedrock confirms this exact block update.
+                        // Acknowledging first can make Java briefly restore the old block state.
+                        wrapper.user().get(BlockPlacementPredictionTracker.class).trackBreaking(
+                            sequence, position, System.nanoTime()
+                        );
+                    }
 
                     if (!gameSession.isBlockBreakingServerAuthoritative()) {
                         clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.StopDestroyBlock));
@@ -535,6 +546,8 @@ public class ClientPlayerPackets {
                 return;
             }
 
+            clientPlayer.recordMovementPrediction();
+
             clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.BlockBreakingDelayEnabled);
             if (clientPlayer.isOnGround()) {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.VerticalCollision);
@@ -554,12 +567,11 @@ public class ClientPlayerPackets {
             if (clientPlayer.inputFlags().contains(InputFlag.RIGHT)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.Right);
             }
-            if (clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.JumpDown, PlayerAuthInputPacketPayload_InputData.Jumping, PlayerAuthInputPacketPayload_InputData.WantUp, PlayerAuthInputPacketPayload_InputData.JumpCurrentRaw);
-            }
-            if (clientPlayer.inputFlags().contains(InputFlag.SHIFT)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SneakDown, PlayerAuthInputPacketPayload_InputData.Sneaking, PlayerAuthInputPacketPayload_InputData.WantDown, PlayerAuthInputPacketPayload_InputData.SneakCurrentRaw);
-            }
+            clientPlayer.authInputData().addAll(verticalMovementInput(
+                clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying),
+                clientPlayer.inputFlags().contains(InputFlag.JUMP),
+                clientPlayer.inputFlags().contains(InputFlag.SHIFT)
+            ));
             if (clientPlayer.inputFlags().contains(InputFlag.SPRINT)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SprintDown, PlayerAuthInputPacketPayload_InputData.Sprinting);
             }
@@ -720,6 +732,29 @@ public class ClientPlayerPackets {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.MissedSwing);
             }
         });
+    }
+
+    /** Maps Java's vertical keys to the continuous Bedrock input flags for this tick. */
+    public static Set<PlayerAuthInputPacketPayload_InputData> verticalMovementInput(final boolean flying,
+                                                                                     final boolean jumping,
+                                                                                     final boolean shifting) {
+        final Set<PlayerAuthInputPacketPayload_InputData> input =
+            EnumSet.noneOf(PlayerAuthInputPacketPayload_InputData.class);
+        if (jumping) {
+            input.add(PlayerAuthInputPacketPayload_InputData.JumpDown);
+            input.add(PlayerAuthInputPacketPayload_InputData.Jumping);
+            input.add(PlayerAuthInputPacketPayload_InputData.WantUp);
+            input.add(PlayerAuthInputPacketPayload_InputData.JumpCurrentRaw);
+            if (flying) input.add(PlayerAuthInputPacketPayload_InputData.Ascend);
+        }
+        if (shifting) {
+            input.add(PlayerAuthInputPacketPayload_InputData.SneakDown);
+            input.add(PlayerAuthInputPacketPayload_InputData.Sneaking);
+            input.add(PlayerAuthInputPacketPayload_InputData.WantDown);
+            input.add(PlayerAuthInputPacketPayload_InputData.SneakCurrentRaw);
+            if (flying) input.add(PlayerAuthInputPacketPayload_InputData.Descend);
+        }
+        return input;
     }
 
 }

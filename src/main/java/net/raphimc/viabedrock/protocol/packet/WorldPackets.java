@@ -86,6 +86,10 @@ public class WorldPackets {
             return;
         }
 
+        final BlockPlacementPredictionTracker predictionTracker = wrapper.user().get(BlockPlacementPredictionTracker.class);
+        final boolean authoritativeAir = blockState == chunkTracker.bedrockAirId();
+        final boolean suppressBreakingReassertion = layer == 0
+            && predictionTracker.shouldSuppressBreakingReassertion(position, authoritativeAir);
         final int previousBlockState = chunkTracker.getBlockState(layer, position);
         final IntObjectPair<BlockEntity> remappedBlock = chunkTracker.handleBlockChange(position, layer, blockState);
         scheduleSpongeRefresh(chunkTracker, blockStateRewriter, position, layer, previousBlockState, blockState);
@@ -96,16 +100,23 @@ public class WorldPackets {
 
         wrapper.write(Types.VAR_INT, remappedBlock.keyInt()); // block state
 
-        final boolean placementConfirmed = layer == 0
-            && wrapper.user().get(BlockPlacementPredictionTracker.class).confirm(position);
+        final boolean predictionConfirmed = layer == 0
+            && predictionTracker.confirm(position, authoritativeAir);
 
-        if (remappedBlock.value() != null || placementConfirmed) {
+        if (suppressBreakingReassertion) {
+            // Retain the authoritative solid state for timeout rollback, but do not show it to
+            // Java while Bedrock is still processing a locally completed break prediction.
+            wrapper.cancel();
+            return;
+        }
+
+        if (remappedBlock.value() != null || predictionConfirmed) {
             wrapper.send(BedrockProtocol.class);
             wrapper.cancel();
             if (remappedBlock.value() != null) {
                 PacketFactory.sendJavaBlockEntityData(wrapper.user(), position, remappedBlock.value());
             }
-            if (placementConfirmed) {
+            if (predictionConfirmed) {
                 PacketFactory.flushJavaBlockChangedAck(wrapper.user());
             }
         }
@@ -434,9 +445,13 @@ public class WorldPackets {
 
             final Map<BlockPosition, List<BlockChangeRecord>> blockChanges = new HashMap<>();
             final Map<BlockPosition, BlockEntity> blockEntities = new HashMap<>();
-            boolean placementConfirmed = false;
+            boolean predictionConfirmed = false;
             for (int layer = 0; layer < blockUpdatesArray.length; layer++) {
                 for (BlockChangeEntry entry : blockUpdatesArray[layer]) {
+                    final BlockPlacementPredictionTracker predictionTracker = wrapper.user().get(BlockPlacementPredictionTracker.class);
+                    final boolean authoritativeAir = entry.blockState() == chunkTracker.bedrockAirId();
+                    final boolean suppressBreakingReassertion = layer == 0
+                        && predictionTracker.shouldSuppressBreakingReassertion(entry.position(), authoritativeAir);
                     final int previousBlockState = chunkTracker.getBlockState(layer, entry.position());
                     final IntObjectPair<BlockEntity> remappedBlock = chunkTracker.handleBlockChange(entry.position(), layer, entry.blockState());
                     scheduleSpongeRefresh(chunkTracker, wrapper.user().get(BlockStateRewriter.class), entry.position(), layer,
@@ -444,11 +459,16 @@ public class WorldPackets {
                     if (remappedBlock == null) {
                         continue;
                     }
+                    if (layer == 0) {
+                        predictionConfirmed |= predictionTracker.confirm(entry.position(), authoritativeAir);
+                    }
+                    if (suppressBreakingReassertion) {
+                        // Keep it in ChunkTracker for a possible timeout rollback, without
+                        // momentarily restoring the block in Java before Bedrock confirms air.
+                        continue;
+                    }
                     if (remappedBlock.value() != null) {
                         blockEntities.put(entry.position(), remappedBlock.value());
-                    }
-                    if (layer == 0) {
-                        placementConfirmed |= wrapper.user().get(BlockPlacementPredictionTracker.class).confirm(entry.position());
                     }
 
                     final BlockPosition chunkPosition = new BlockPosition(entry.position().x() >> 4, entry.position().y() >> 4, entry.position().z() >> 4);
@@ -470,7 +490,7 @@ public class WorldPackets {
             for (Map.Entry<BlockPosition, BlockEntity> entry : blockEntities.entrySet()) {
                 PacketFactory.sendJavaBlockEntityData(wrapper.user(), entry.getKey(), entry.getValue());
             }
-            if (placementConfirmed) {
+            if (predictionConfirmed) {
                 PacketFactory.flushJavaBlockChangedAck(wrapper.user());
             }
         });

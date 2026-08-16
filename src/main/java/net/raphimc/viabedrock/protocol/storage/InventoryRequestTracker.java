@@ -11,6 +11,7 @@ package net.raphimc.viabedrock.protocol.storage;
 
 import com.viaversion.viaversion.api.connection.StoredObject;
 import com.viaversion.viaversion.api.connection.UserConnection;
+import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.libs.fastutil.ints.Int2ObjectOpenHashMap;
 import net.raphimc.viabedrock.api.model.container.Container;
@@ -51,13 +52,22 @@ public final class InventoryRequestTracker extends StoredObject {
      */
     public boolean send(final IntFunction<List<InventoryStackRequest.Action>> actionFactory,
                         final Map<Container, BedrockItem[]> snapshots, final boolean javaClientManaged) {
+        return this.send(actionFactory, snapshots, javaClientManaged, null);
+    }
+
+    /**
+     * @param javaCursorOnFailure Java's client-managed creative cursor to restore when Bedrock rejects the request
+     */
+    public boolean send(final IntFunction<List<InventoryStackRequest.Action>> actionFactory,
+                        final Map<Container, BedrockItem[]> snapshots, final boolean javaClientManaged,
+                        final Item javaCursorOnFailure) {
         final int requestId = this.nextRequestId;
         final List<InventoryStackRequest.Action> actions = List.copyOf(actionFactory.apply(requestId));
         if (actions.isEmpty()) {
             return false;
         }
         this.nextRequestId -= 2; // Bedrock client request IDs are negative odd numbers
-        this.pendingRequests.put(requestId, new PendingRequest(snapshots, actions, javaClientManaged));
+        this.pendingRequests.put(requestId, new PendingRequest(snapshots, actions, javaClientManaged, javaCursorOnFailure));
         final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
         final InventoryStackRequestType requestType = new InventoryStackRequestType(runtimeId -> itemRewriter.getItems().inverse().get(runtimeId));
         final PacketWrapper request = PacketWrapper.create(ServerboundBedrockPackets.ITEM_STACK_REQUEST, this.user());
@@ -92,6 +102,10 @@ public final class InventoryRequestTracker extends StoredObject {
     }
 
     public record PendingRequest(Map<Container, BedrockItem[]> snapshots, List<InventoryStackRequest.Action> actions,
-                                 boolean javaClientManaged) {
+                                 boolean javaClientManaged, Item javaCursorOnFailure) {
+
+        public PendingRequest {
+            javaCursorOnFailure = javaCursorOnFailure != null ? javaCursorOnFailure.copy() : null;
+        }
     }
 }

@@ -21,6 +21,7 @@ import com.viaversion.nbt.tag.Tag;
 import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.BlockPosition;
 import com.viaversion.viaversion.api.minecraft.blockentity.BlockEntity;
+import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
@@ -82,6 +83,12 @@ public class PacketFactory {
         containerSetContent.send(BedrockProtocol.class);
     }
 
+    public static void sendJavaContainerSetContent(final UserConnection user, final Container container, final Item cursorItem) {
+        final PacketWrapper containerSetContent = PacketWrapper.create(javaCreativeCursorRollbackPacketType(), user);
+        writeJavaContainerSetContent(containerSetContent, container, cursorItem);
+        containerSetContent.send(BedrockProtocol.class);
+    }
+
     public static void sendJavaContainerSetSlot(final UserConnection user, final Container container, final int bedrockSlot) {
         final PacketWrapper containerSetSlot = PacketWrapper.create(ClientboundPackets26_1.CONTAINER_SET_SLOT, user);
         containerSetSlot.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
@@ -89,6 +96,10 @@ public class PacketFactory {
         containerSetSlot.write(Types.SHORT, (short) container.javaSlot(bedrockSlot)); // slot
         containerSetSlot.write(VersionedTypes.V26_2.item, container.getJavaItem(bedrockSlot)); // item
         containerSetSlot.send(BedrockProtocol.class);
+    }
+
+    public static ClientboundPackets26_1 javaCreativeCursorRollbackPacketType() {
+        return ClientboundPackets26_1.CONTAINER_SET_CONTENT;
     }
 
     public static void sendJavaGameEvent(final UserConnection user, final GameEventType event, final float value) {
@@ -202,10 +213,14 @@ public class PacketFactory {
     }
 
     public static void writeJavaContainerSetContent(final PacketWrapper wrapper, final Container container) {
+        writeJavaContainerSetContent(wrapper, container, wrapper.user().get(InventoryTracker.class).getHudContainer().getJavaItem(0));
+    }
+
+    public static void writeJavaContainerSetContent(final PacketWrapper wrapper, final Container container, final Item cursorItem) {
         wrapper.write(Types.VAR_INT, (int) container.javaContainerId()); // container id
         wrapper.write(Types.VAR_INT, 0); // revision
         wrapper.write(VersionedTypes.V26_2.itemArray, container.getJavaItems()); // items
-        wrapper.write(VersionedTypes.V26_2.item, wrapper.user().get(InventoryTracker.class).getHudContainer().getJavaItem(0)); // cursor item
+        wrapper.write(VersionedTypes.V26_2.item, cursorItem); // cursor item
     }
 
     public static void writeJavaTime(final PacketWrapper wrapper, final long bedrockTime) {
