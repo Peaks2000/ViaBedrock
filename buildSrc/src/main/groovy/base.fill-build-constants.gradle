@@ -11,6 +11,7 @@ sourceSets.configureEach {
 
 Provider<String> latestCommitHash() {
     return providers.exec {
+        workingDir = project.rootDir
         commandLine = ["git", "rev-parse", "--short", "HEAD"]
     }.standardOutput.getAsText().map(String::trim)
 }
