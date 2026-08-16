@@ -4,9 +4,11 @@ on:
   pull_request:
     branches:
       - peaks/1.26.40-fixes
+      - experiment/4.6.14
   push:
     branches:
       - peaks/1.26.40-fixes
+      - experiment/4.6.14
   workflow_dispatch:
 
 permissions:
