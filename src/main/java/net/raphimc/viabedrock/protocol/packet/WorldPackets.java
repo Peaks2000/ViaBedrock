@@ -41,6 +41,7 @@ import net.raphimc.viabedrock.api.chunk.datapalette.BedrockBiomeArray;
 import net.raphimc.viabedrock.api.chunk.datapalette.BedrockDataPalette;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSection;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSectionImpl;
+import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
@@ -71,8 +72,11 @@ import java.util.logging.Level;
 
 public class WorldPackets {
 
+    private static final int SPONGE_REFRESH_RADIUS = 6;
+
     private static final PacketHandler UPDATE_BLOCK_HANDLER = wrapper -> {
         final ChunkTracker chunkTracker = wrapper.user().get(ChunkTracker.class);
+        final BlockStateRewriter blockStateRewriter = wrapper.user().get(BlockStateRewriter.class);
         final BlockPosition position = wrapper.get(Types.BLOCK_POSITION1_14, 0);
         final int blockState = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // block state
         wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // flags
@@ -82,7 +86,9 @@ public class WorldPackets {
             return;
         }
 
+        final int previousBlockState = chunkTracker.getBlockState(layer, position);
         final IntObjectPair<BlockEntity> remappedBlock = chunkTracker.handleBlockChange(position, layer, blockState);
+        scheduleSpongeRefresh(chunkTracker, blockStateRewriter, position, layer, previousBlockState, blockState);
         if (remappedBlock == null) {
             wrapper.cancel();
             return;
@@ -422,7 +428,10 @@ public class WorldPackets {
             final Map<BlockPosition, BlockEntity> blockEntities = new HashMap<>();
             for (int layer = 0; layer < blockUpdatesArray.length; layer++) {
                 for (BlockChangeEntry entry : blockUpdatesArray[layer]) {
+                    final int previousBlockState = chunkTracker.getBlockState(layer, entry.position());
                     final IntObjectPair<BlockEntity> remappedBlock = chunkTracker.handleBlockChange(entry.position(), layer, entry.blockState());
+                    scheduleSpongeRefresh(chunkTracker, wrapper.user().get(BlockStateRewriter.class), entry.position(), layer,
+                        previousBlockState, entry.blockState());
                     if (remappedBlock == null) {
                         continue;
                     }
@@ -544,6 +553,20 @@ public class WorldPackets {
             wrapper.write(BedrockTypes.BLOCK_POSITION, position); // position
             wrapper.write(BedrockTypes.NETWORK_TAG, signTag.copy()); // block entity tag
         });
+    }
+
+    private static void scheduleSpongeRefresh(final ChunkTracker chunkTracker, final BlockStateRewriter blockStateRewriter,
+                                              final BlockPosition position, final int layer,
+                                              final int previousBlockState, final int blockState) {
+        if (layer == 0 && !isSponge(blockStateRewriter, previousBlockState) && isSponge(blockStateRewriter, blockState)) {
+            // Native Bedrock predicts absorption locally, so fetch the host's resulting sections.
+            chunkTracker.requestSubChunkRefreshAround(position, SPONGE_REFRESH_RADIUS);
+        }
+    }
+
+    private static boolean isSponge(final BlockStateRewriter blockStateRewriter, final int blockState) {
+        final BlockState state = blockStateRewriter.blockState(blockState);
+        return state != null && (state.identifier().equals("sponge") || state.identifier().equals("wet_sponge"));
     }
 
 }

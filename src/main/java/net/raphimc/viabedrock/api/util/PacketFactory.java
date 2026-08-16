@@ -32,11 +32,13 @@ import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.BedrockMappingData;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ServerboundLoadingScreenPacketType;
 import net.raphimc.viabedrock.protocol.data.enums.java.EntityEvent;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.CustomChatCompletionsAction;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameRulesStorage;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
@@ -146,6 +148,14 @@ public class PacketFactory {
         containerClose.write(Types.BYTE, (byte) containerType.getValue()); // type
         containerClose.write(Types.BOOLEAN, false); // server initiated
         containerClose.sendToServer(BedrockProtocol.class);
+    }
+
+    public static void sendBedrockOpenInventory(final UserConnection user) {
+        final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, user);
+        interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.OpenInventory.getValue());
+        interact.write(BedrockTypes.UNSIGNED_VAR_LONG, user.get(EntityTracker.class).getClientPlayer().runtimeId());
+        interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null);
+        interact.sendToServer(BedrockProtocol.class);
     }
 
     public static void sendBedrockLoadingScreen(final UserConnection user, final ServerboundLoadingScreenPacketType type, final Long loadingScreenId) {

@@ -57,6 +57,7 @@ import java.util.logging.Level;
 public class InventoryTracker extends StoredObject {
 
     private static final int PLAYER_INVENTORY_REFRESH_DELAY_TICKS = 2;
+    private static final int OFFHAND_SWAP_OPEN_TIMEOUT_TICKS = 40;
 
     private final InventoryContainer inventoryContainer = new InventoryContainer(this.user());
     private final OffhandContainer offhandContainer = new OffhandContainer(this.user());
@@ -69,6 +70,10 @@ public class InventoryTracker extends StoredObject {
     private IntObjectPair<Form> currentForm = null;
     private int playerInventoryRefreshTicks;
     private boolean playerInventoryResyncPending;
+    private boolean offhandSwapPending;
+    private boolean offhandSwapInProgress;
+    private boolean syntheticInventoryOpen;
+    private int offhandSwapOpenTicks;
 
     public InventoryTracker(final UserConnection user) {
         super(user);
@@ -152,6 +157,11 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void tick() {
+        if (this.offhandSwapPending && --this.offhandSwapOpenTicks <= 0) {
+            this.offhandSwapPending = false;
+            PacketFactory.sendBedrockContainerClose(this.user(), (byte) -1, ContainerType.NONE);
+        }
+
         if (this.playerInventoryRefreshTicks > 0 && --this.playerInventoryRefreshTicks == 0) {
             PacketFactory.sendJavaContainerSetContent(this.user(), this.inventoryContainer);
             if (this.playerInventoryResyncPending) {
@@ -194,6 +204,51 @@ public class InventoryTracker extends StoredObject {
     public void schedulePlayerInventoryResync() {
         this.playerInventoryRefreshTicks = Math.max(this.playerInventoryRefreshTicks, 1);
         this.playerInventoryResyncPending = true;
+    }
+
+    public void requestOffhandSwap() {
+        if (this.offhandSwapPending || this.offhandSwapInProgress || this.pendingCloseContainer != null || this.currentForm != null) {
+            return;
+        }
+        if (this.currentContainer instanceof InventoryContainer inventory) {
+            this.offhandSwapInProgress = true;
+            this.user().get(InventoryRequestTracker.class).executeWhenIdle(() -> this.executeOffhandSwap(inventory));
+            return;
+        }
+        if (this.currentContainer != null) return;
+
+        this.offhandSwapPending = true;
+        this.offhandSwapOpenTicks = OFFHAND_SWAP_OPEN_TIMEOUT_TICKS;
+        PacketFactory.sendBedrockOpenInventory(this.user());
+    }
+
+    public void onInventoryContainerOpened(final InventoryContainer inventory) {
+        if (!this.offhandSwapPending) return;
+
+        this.offhandSwapPending = false;
+        this.offhandSwapOpenTicks = 0;
+        this.offhandSwapInProgress = true;
+        this.syntheticInventoryOpen = true;
+        this.user().get(InventoryRequestTracker.class).executeWhenIdle(() -> this.executeOffhandSwap(inventory));
+    }
+
+    private void executeOffhandSwap(final InventoryContainer inventory) {
+        final InventoryRequestTracker requestTracker = this.user().get(InventoryRequestTracker.class);
+        if (!inventory.handleSwapWithOffhand(this)) {
+            this.finishOffhandSwap(inventory);
+            return;
+        }
+        requestTracker.executeWhenIdle(() -> this.finishOffhandSwap(inventory));
+    }
+
+    private void finishOffhandSwap(final InventoryContainer inventory) {
+        this.offhandSwapInProgress = false;
+        if (!this.syntheticInventoryOpen) return;
+
+        this.syntheticInventoryOpen = false;
+        if (this.currentContainer != inventory) return;
+        this.markPendingClose(inventory);
+        PacketFactory.sendBedrockContainerClose(this.user(), inventory.containerId(), ContainerType.NONE);
     }
 
     private void requestPlayerInventoryResync() {

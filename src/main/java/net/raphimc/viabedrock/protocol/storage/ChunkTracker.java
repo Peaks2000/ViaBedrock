@@ -84,6 +84,7 @@ public class ChunkTracker extends StoredObject {
 
     private final Set<SubChunkPosition> subChunkRequests = new HashSet<>();
     private final Set<SubChunkPosition> pendingSubChunks = new HashSet<>();
+    private final Set<SubChunkPosition> refreshSubChunks = new HashSet<>();
 
     private int centerX = 0;
     private int centerZ = 0;
@@ -144,6 +145,9 @@ public class ChunkTracker extends StoredObject {
 
     public void unloadChunk(final ChunkPosition chunkPos) {
         this.chunks.remove(chunkPos.chunkKey());
+        this.subChunkRequests.removeIf(position -> position.chunkX == chunkPos.chunkX() && position.chunkZ == chunkPos.chunkZ());
+        this.pendingSubChunks.removeIf(position -> position.chunkX == chunkPos.chunkX() && position.chunkZ == chunkPos.chunkZ());
+        this.refreshSubChunks.removeIf(position -> position.chunkX == chunkPos.chunkX() && position.chunkZ == chunkPos.chunkZ());
         this.user().get(EntityTracker.class).removeItemFrame(chunkPos);
 
         final PacketWrapper unloadChunk = PacketWrapper.create(ClientboundPackets26_1.FORGET_LEVEL_CHUNK, this.user());
@@ -297,6 +301,26 @@ public class ChunkTracker extends StoredObject {
         this.subChunkRequests.add(new SubChunkPosition(chunkX, subChunkY, chunkZ));
     }
 
+    public void requestSubChunkRefreshAround(final BlockPosition position, final int radius) {
+        final int minSectionX = (position.x() - radius) >> 4;
+        final int maxSectionX = (position.x() + radius) >> 4;
+        final int minSectionY = (position.y() - radius) >> 4;
+        final int maxSectionY = (position.y() + radius) >> 4;
+        final int minSectionZ = (position.z() - radius) >> 4;
+        final int maxSectionZ = (position.z() + radius) >> 4;
+
+        for (int chunkX = minSectionX; chunkX <= maxSectionX; chunkX++) {
+            for (int subChunkY = minSectionY; subChunkY <= maxSectionY; subChunkY++) {
+                for (int chunkZ = minSectionZ; chunkZ <= maxSectionZ; chunkZ++) {
+                    if (this.getChunkSection(chunkX, subChunkY, chunkZ) == null) continue;
+                    final SubChunkPosition refresh = new SubChunkPosition(chunkX, subChunkY, chunkZ);
+                    this.refreshSubChunks.add(refresh);
+                    if (!this.pendingSubChunks.contains(refresh)) this.subChunkRequests.add(refresh);
+                }
+            }
+        }
+    }
+
     public boolean mergeSubChunk(final int chunkX, final int subChunkY, final int chunkZ, final BedrockChunkSection other, final List<BedrockBlockEntity> blockEntities) {
         if (!this.isInLoadDistance(chunkX, chunkZ)) return false;
 
@@ -313,7 +337,18 @@ public class ChunkTracker extends StoredObject {
             return false;
         }
 
-        final BedrockChunkSection section = chunk.getSections()[subChunkY + Math.abs(this.minY >> 4)];
+        final int sectionIndex = subChunkY + Math.abs(this.minY >> 4);
+        if (this.refreshSubChunks.remove(position)) {
+            final BedrockChunkSection replacement = this.handleBlockPalette(other);
+            replacement.applyPendingBlockUpdates(this.bedrockAirId());
+            chunk.getSections()[sectionIndex] = replacement;
+            chunk.blockEntities().removeIf(blockEntity -> ((BedrockBlockEntity) blockEntity).position().y() >> 4 == subChunkY);
+            chunk.blockEntities().addAll(blockEntities);
+            this.sendChunkInNextTick(chunkX, chunkZ);
+            return true;
+        }
+
+        final BedrockChunkSection section = chunk.getSections()[sectionIndex];
         section.mergeWith(this.handleBlockPalette(other));
         section.applyPendingBlockUpdates(this.bedrockAirId());
         blockEntities.forEach(blockEntity -> chunk.removeBlockEntityAt(blockEntity.position()));
@@ -456,6 +491,7 @@ public class ChunkTracker extends StoredObject {
         }
 
         this.subChunkRequests.removeIf(s -> !this.isInLoadDistance(s.chunkX, s.chunkZ));
+        this.refreshSubChunks.removeIf(s -> !this.isInLoadDistance(s.chunkX, s.chunkZ));
         final BlockPosition basePosition = new BlockPosition(this.centerX, 0, this.centerZ);
         while (!this.subChunkRequests.isEmpty()) {
             final Set<SubChunkPosition> group = this.subChunkRequests.stream().limit(256).collect(Collectors.toSet());

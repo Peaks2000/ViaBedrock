@@ -21,12 +21,31 @@ import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.BlockPosition;
 import com.viaversion.viaversion.libs.mcstructs.text.TextComponent;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.generated.bedrock.CustomBlockTags;
+import net.raphimc.viabedrock.protocol.model.FullContainerName;
 
 public class ChestContainer extends Container {
 
-    public ChestContainer(final UserConnection user, final byte containerId, final TextComponent title, final BlockPosition position, final int size) {
-        super(user, containerId, ContainerType.CONTAINER, title, position, size, CustomBlockTags.CHEST, CustomBlockTags.TRAPPED_CHEST);
+    private final ContainerEnumName containerName;
+
+    public ChestContainer(final UserConnection user, final byte containerId, final TextComponent title,
+                          final BlockPosition position, final int size, final String blockTag) {
+        super(user, containerId, ContainerType.CONTAINER, title, position, size,
+            CustomBlockTags.CHEST, CustomBlockTags.TRAPPED_CHEST, CustomBlockTags.ENDER_CHEST,
+            CustomBlockTags.BARREL, CustomBlockTags.SHULKER_BOX);
+        if (CustomBlockTags.BARREL.equals(blockTag)) {
+            this.containerName = ContainerEnumName.BarrelContainer;
+        } else if (CustomBlockTags.SHULKER_BOX.equals(blockTag)) {
+            this.containerName = ContainerEnumName.ShulkerBoxContainer;
+        } else {
+            this.containerName = ContainerEnumName.LevelEntityContainer;
+        }
+    }
+
+    @Override
+    public FullContainerName getFullContainerName(final int slot) {
+        return new FullContainerName(this.containerName, null);
     }
 
 }

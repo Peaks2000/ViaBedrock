@@ -110,6 +110,43 @@ public abstract class Container {
         return handled;
     }
 
+    public boolean handleSwapWithOffhand(final InventoryTracker tracker) {
+        if (!(this instanceof InventoryContainer inventory)) return false;
+
+        final Container offhand = tracker.getOffhandContainer();
+        final int hotbarSlot = inventory.getSelectedHotbarSlot();
+        final BedrockItem hotbarItem = inventory.getItem(hotbarSlot);
+        final BedrockItem offhandItem = offhand.getItem(0);
+        if (hotbarItem.isEmpty() && offhandItem.isEmpty()) return false;
+
+        final Map<Container, BedrockItem[]> snapshots = new IdentityHashMap<>();
+        return this.user.get(InventoryRequestTracker.class).send(requestId -> {
+            this.snapshot(snapshots, inventory);
+            this.snapshot(snapshots, offhand);
+
+            inventory.setPredictedItem(hotbarSlot, this.markModified(offhandItem.copy(), requestId));
+            offhand.setPredictedItem(0, this.markModified(hotbarItem.copy(), requestId));
+
+            if (hotbarItem.isEmpty()) {
+                return List.of(new InventoryStackRequest.Place(
+                    offhandItem.amount(),
+                    this.requestSlot(offhand, 0, offhandItem),
+                    this.requestSlot(inventory, hotbarSlot, hotbarItem)
+                ));
+            } else if (offhandItem.isEmpty()) {
+                return List.of(new InventoryStackRequest.Place(
+                    hotbarItem.amount(),
+                    this.requestSlot(inventory, hotbarSlot, hotbarItem),
+                    this.requestSlot(offhand, 0, offhandItem)
+                ));
+            }
+            return List.of(new InventoryStackRequest.Swap(
+                this.requestSlot(inventory, hotbarSlot, hotbarItem),
+                this.requestSlot(offhand, 0, offhandItem)
+            ));
+        }, snapshots);
+    }
+
     private boolean handleQuickCraft(final short javaSlot, final byte button, final InventoryTracker tracker,
                                      final InventoryRequestTracker requestTracker) {
         final int buttonValue = Byte.toUnsignedInt(button);
@@ -200,9 +237,9 @@ public abstract class Container {
             final BedrockItem placed = targetItem.isEmpty()
                 ? this.withAmount(cursorItem, count)
                 : this.withAmount(targetItem, targetItem.amount() + count);
-            target.container().setItem(target.slot(), this.markModified(placed, requestId));
+            target.container().setPredictedItem(target.slot(), this.markModified(placed, requestId));
             cursorItem = this.markModified(this.withRemovedAmount(cursorItem, count), requestId);
-            cursor.setItem(0, cursorItem);
+            cursor.setPredictedItem(0, cursorItem);
         }
         return actions;
     }
@@ -322,7 +359,7 @@ public abstract class Container {
             final BedrockItem newDestination = destinationItem.isEmpty()
                 ? this.withAmount(output, output.amount())
                 : this.withAmount(destinationItem, destinationItem.amount() + output.amount());
-            destination.container().setItem(destination.slot(), this.markModified(newDestination, requestId));
+            destination.container().setPredictedItem(destination.slot(), this.markModified(newDestination, requestId));
         }
 
         for (CraftingRecipeStorage.ConsumedSlot consumed : recipe.consumedSlots()) {
@@ -343,9 +380,9 @@ public abstract class Container {
                 }
                 if (remainderAmount > 0) this.addToInventory(inventory, remainder, remainderAmount, requestId);
             }
-            hud.setItem(consumed.slot(), this.markModified(remaining, requestId));
+            hud.setPredictedItem(consumed.slot(), this.markModified(remaining, requestId));
         }
-        hud.setItem(50, BedrockItem.empty());
+        hud.setPredictedItem(50, BedrockItem.empty());
         return actions;
     }
 
@@ -364,7 +401,7 @@ public abstract class Container {
                 actions.add(new InventoryStackRequest.Take(count, this.createdOutputSlot(requestId), this.requestSlot(inventory, slot, item)));
                 final BedrockItem moved = item.isEmpty()
                     ? this.withAmount(output, count) : this.withAmount(item, item.amount() + count);
-                inventory.setItem(slot, this.markModified(moved, requestId));
+                inventory.setPredictedItem(slot, this.markModified(moved, requestId));
                 remaining -= count;
             }
         }
@@ -377,7 +414,7 @@ public abstract class Container {
         if (javaSlot == -999) {
             if (cursorItem.isEmpty()) return null;
             final int count = button == 0 ? cursorItem.amount() : 1;
-            cursor.setItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
+            cursor.setPredictedItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
             return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, cursorItem), false);
         }
 
@@ -389,8 +426,8 @@ public abstract class Container {
         this.snapshot(snapshots, target.container());
         if (cursorItem.isEmpty()) {
             final int count = button == 0 ? targetItem.amount() : (targetItem.amount() + 1) / 2;
-            cursor.setItem(0, this.markModified(this.withAmount(targetItem, count), requestId));
-            target.container().setItem(target.slot(), this.markModified(this.withRemovedAmount(targetItem, count), requestId));
+            cursor.setPredictedItem(0, this.markModified(this.withAmount(targetItem, count), requestId));
+            target.container().setPredictedItem(target.slot(), this.markModified(this.withRemovedAmount(targetItem, count), requestId));
             return new InventoryStackRequest.Take(
                 count,
                 this.requestSlot(target.container(), target.slot(), targetItem),
@@ -406,8 +443,8 @@ public abstract class Container {
             if (count <= 0) return null;
 
             final BedrockItem placed = targetItem.isEmpty() ? this.withAmount(cursorItem, count) : this.withAmount(targetItem, targetItem.amount() + count);
-            target.container().setItem(target.slot(), this.markModified(placed, requestId));
-            cursor.setItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
+            target.container().setPredictedItem(target.slot(), this.markModified(placed, requestId));
+            cursor.setPredictedItem(0, this.markModified(this.withRemovedAmount(cursorItem, count), requestId));
             return new InventoryStackRequest.Place(
                 count,
                 this.requestSlot(cursor, 0, cursorItem),
@@ -415,8 +452,8 @@ public abstract class Container {
             );
         }
 
-        cursor.setItem(0, this.markModified(targetItem.copy(), requestId));
-        target.container().setItem(target.slot(), this.markModified(cursorItem.copy(), requestId));
+        cursor.setPredictedItem(0, this.markModified(targetItem.copy(), requestId));
+        target.container().setPredictedItem(target.slot(), this.markModified(cursorItem.copy(), requestId));
         return new InventoryStackRequest.Swap(
             this.requestSlot(cursor, 0, cursorItem),
             this.requestSlot(target.container(), target.slot(), targetItem)
@@ -469,9 +506,9 @@ public abstract class Container {
                     this.requestSlot(cursor, 0, cursorItem)
                 ));
 
-                source.container().setItem(source.slot(), this.markModified(this.withRemovedAmount(sourceItem, count), requestId));
+                source.container().setPredictedItem(source.slot(), this.markModified(this.withRemovedAmount(sourceItem, count), requestId));
                 cursorItem = this.markModified(this.withAmount(cursorItem, cursorItem.amount() + count), requestId);
-                cursor.setItem(0, cursorItem);
+                cursor.setPredictedItem(0, cursorItem);
             }
         }
         return actions;
@@ -493,8 +530,8 @@ public abstract class Container {
 
         this.snapshot(snapshots, target.container());
         this.snapshot(snapshots, inventory);
-        target.container().setItem(target.slot(), this.markModified(hotbarItem.copy(), requestId));
-        inventory.setItem(hotbarSlot, this.markModified(targetItem.copy(), requestId));
+        target.container().setPredictedItem(target.slot(), this.markModified(hotbarItem.copy(), requestId));
+        inventory.setPredictedItem(hotbarSlot, this.markModified(targetItem.copy(), requestId));
 
         if (hotbarItem.isEmpty()) {
             return new InventoryStackRequest.Place(
@@ -522,7 +559,7 @@ public abstract class Container {
             final BedrockItem item = cursor.getItem(0);
             if (item.isEmpty()) return null;
             final int count = button == 0 ? 1 : item.amount();
-            cursor.setItem(0, this.markModified(this.withRemovedAmount(item, count), requestId));
+            cursor.setPredictedItem(0, this.markModified(this.withRemovedAmount(item, count), requestId));
             return new InventoryStackRequest.Drop(count, this.requestSlot(cursor, 0, item), false);
         }
 
@@ -533,7 +570,7 @@ public abstract class Container {
 
         this.snapshot(snapshots, source.container());
         final int count = button == 0 ? 1 : item.amount();
-        source.container().setItem(source.slot(), this.markModified(this.withRemovedAmount(item, count), requestId));
+        source.container().setPredictedItem(source.slot(), this.markModified(this.withRemovedAmount(item, count), requestId));
         return new InventoryStackRequest.Drop(count, this.requestSlot(source.container(), source.slot(), item), false);
     }
 
@@ -585,9 +622,9 @@ public abstract class Container {
                 final BedrockItem moved = destinationItem.isEmpty()
                     ? this.withAmount(sourceItem, count)
                     : this.withAmount(destinationItem, destinationItem.amount() + count);
-                destination.container().setItem(destination.slot(), this.markModified(moved, requestId));
+                destination.container().setPredictedItem(destination.slot(), this.markModified(moved, requestId));
                 sourceItem = this.markModified(this.withRemovedAmount(sourceItem, count), requestId);
-                source.container().setItem(source.slot(), sourceItem);
+                source.container().setPredictedItem(source.slot(), sourceItem);
             }
         }
         return actions;
@@ -625,7 +662,9 @@ public abstract class Container {
     }
 
     private InventoryStackRequest.Slot requestSlot(final Container container, final int slot, final BedrockItem item) {
-        return new InventoryStackRequest.Slot(container.getFullContainerName(slot), slot, item.netId() != null ? item.netId() : 0);
+        return new InventoryStackRequest.Slot(
+            container.getFullContainerName(slot), container.stackRequestSlot(slot), item.netId() != null ? item.netId() : 0
+        );
     }
 
     private InventoryStackRequest.Slot createdOutputSlot(final int requestId) {
@@ -665,7 +704,7 @@ public abstract class Container {
                     ? this.maxStackSize(item) : this.maxStackSize(item) - target.amount());
                 final BedrockItem result = target.isEmpty()
                     ? this.withAmount(item, count) : this.withAmount(target, target.amount() + count);
-                inventory.setItem(slot, this.markModified(result, requestId));
+                inventory.setPredictedItem(slot, this.markModified(result, requestId));
                 remaining -= count;
             }
         }
@@ -798,6 +837,17 @@ public abstract class Container {
         return true;
     }
 
+    /** Updates the request-local mirror without emitting equipment side effects. */
+    public boolean setPredictedItem(final int slot, final BedrockItem item) {
+        if (slot < 0 || slot >= this.items.length) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Tried to predict item for " + this.type + ", but slot was out of bounds (" + slot + ")");
+            return false;
+        }
+
+        this.items[slot] = item;
+        return true;
+    }
+
     public boolean setItems(final BedrockItem[] items) {
         if (items.length != this.items.length) {
             ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Tried to set items for " + this.type + ", but items array length was not correct (" + items.length + " != " + this.items.length + ")");
@@ -815,6 +865,14 @@ public abstract class Container {
     }
 
     public int bedrockSlot(final int slot) {
+        return slot;
+    }
+
+    public int stackRequestSlot(final int slot) {
+        return slot;
+    }
+
+    public int stackResponseSlot(final int slot) {
         return slot;
     }
 
