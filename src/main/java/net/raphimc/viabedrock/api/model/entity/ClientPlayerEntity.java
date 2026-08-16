@@ -33,6 +33,7 @@ import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.Direction;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.AbilitiesIndex;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorFlags;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.GameMode;
@@ -40,6 +41,7 @@ import net.raphimc.viabedrock.protocol.model.EntityAttribute;
 import net.raphimc.viabedrock.protocol.model.PlayerAbilities;
 import net.raphimc.viabedrock.protocol.model.Position2f;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.GameTypeRewriter;
 import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.CommandsStorage;
@@ -305,6 +307,7 @@ public class ClientPlayerEntity extends PlayerEntity {
     public void recordMovementPrediction() {
         this.movementPredictions.record(
             this.age, this.position, this.onGround, this.horizontalCollision,
+            this.hasContinuousVerticalMovement(),
             this.gameSession.getMovementRewindHistorySize()
         );
     }
@@ -317,8 +320,52 @@ public class ClientPlayerEntity extends PlayerEntity {
         final boolean verticalStabilizationInput = this.inputFlags.contains(InputFlag.SHIFT);
         return this.movementPredictions.replay(
             tick, position, onGround, this.age, this.position, this.onGround, this.horizontalCollision,
-            verticalStabilizationInput
+            verticalStabilizationInput, this.hasContinuousVerticalMovement()
         );
+    }
+
+    /** True when Java is moving vertically without normal gravity/jump reconciliation. */
+    public boolean hasContinuousVerticalMovement() {
+        return this.abilities.getBooleanValue(AbilitiesIndex.Flying) || this.isOnClimbable();
+    }
+
+    /**
+     * Uses both Bedrock's entity state and the translated world state. The latter avoids a
+     * one-or-more-tick metadata delay when Java starts climbing a ladder or vine.
+     */
+    public boolean isOnClimbable() {
+        if (this.entityFlags().contains(ActorFlags.WALLCLIMBING)
+            || this.entityFlags().contains(ActorFlags.IN_ASCENDABLE_BLOCK)
+            || this.entityFlags().contains(ActorFlags.IN_SCAFFOLDING)) {
+            return true;
+        }
+
+        final ChunkTracker chunkTracker = this.user.get(ChunkTracker.class);
+        final BlockStateRewriter blockStateRewriter = this.user.get(BlockStateRewriter.class);
+        if (chunkTracker == null || blockStateRewriter == null) return false;
+
+        final int x = (int) Math.floor(this.position.x());
+        final int z = (int) Math.floor(this.position.z());
+        final float feetY = this.position.y() - this.eyeOffset();
+        final int feetBlockY = (int) Math.floor(feetY + 0.001F);
+        return this.isClimbable(chunkTracker, blockStateRewriter, new BlockPosition(x, feetBlockY, z))
+            || this.isClimbable(chunkTracker, blockStateRewriter, new BlockPosition(x, feetBlockY + 1, z));
+    }
+
+    private boolean isClimbable(final ChunkTracker chunkTracker, final BlockStateRewriter blockStateRewriter,
+                                final BlockPosition position) {
+        final net.raphimc.viabedrock.api.model.BlockState blockState =
+            blockStateRewriter.blockState(chunkTracker.getBlockState(position));
+        return blockState != null && isClimbableBlockIdentifier(blockState.identifier());
+    }
+
+    public static boolean isClimbableBlockIdentifier(final String identifier) {
+        return switch (identifier) {
+            case "ladder", "vine", "scaffolding", "weeping_vines", "weeping_vines_plant",
+                 "twisting_vines", "twisting_vines_plant", "cave_vines",
+                 "cave_vines_body_with_berries", "cave_vines_head_with_berries" -> true;
+            default -> false;
+        };
     }
 
     public Set<PlayerAuthInputPacketPayload_InputData> authInputData() {

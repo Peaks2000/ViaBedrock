@@ -570,7 +570,9 @@ public class ClientPlayerPackets {
             clientPlayer.authInputData().addAll(verticalMovementInput(
                 clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying),
                 clientPlayer.inputFlags().contains(InputFlag.JUMP),
-                clientPlayer.inputFlags().contains(InputFlag.SHIFT)
+                clientPlayer.inputFlags().contains(InputFlag.SHIFT),
+                clientPlayer.isOnClimbable(),
+                clientPlayer.position().y() - prevPosition.y()
             ));
             if (clientPlayer.inputFlags().contains(InputFlag.SPRINT)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SprintDown, PlayerAuthInputPacketPayload_InputData.Sprinting);
@@ -737,7 +739,9 @@ public class ClientPlayerPackets {
     /** Maps Java's vertical keys to the continuous Bedrock input flags for this tick. */
     public static Set<PlayerAuthInputPacketPayload_InputData> verticalMovementInput(final boolean flying,
                                                                                      final boolean jumping,
-                                                                                     final boolean shifting) {
+                                                                                     final boolean shifting,
+                                                                                     final boolean climbing,
+                                                                                     final float verticalDelta) {
         final Set<PlayerAuthInputPacketPayload_InputData> input =
             EnumSet.noneOf(PlayerAuthInputPacketPayload_InputData.class);
         if (jumping) {
@@ -753,6 +757,16 @@ public class ClientPlayerPackets {
             input.add(PlayerAuthInputPacketPayload_InputData.WantDown);
             input.add(PlayerAuthInputPacketPayload_InputData.SneakCurrentRaw);
             if (flying) input.add(PlayerAuthInputPacketPayload_InputData.Descend);
+        }
+        // Java climbs ladders by resolving its collision and forward motion, often without a
+        // jump key. Tell Bedrock which continuous direction Java actually moved so its rewind
+        // predictor does not fight the next Java position. Do not synthesize raw key edges or
+        // sneaking, which would alter gameplay state.
+        if (climbing && verticalDelta > 0.0001F) {
+            input.add(PlayerAuthInputPacketPayload_InputData.Jumping);
+            input.add(PlayerAuthInputPacketPayload_InputData.WantUp);
+        } else if (climbing && verticalDelta < -0.0001F) {
+            input.add(PlayerAuthInputPacketPayload_InputData.WantDown);
         }
         return input;
     }

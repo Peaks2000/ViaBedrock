@@ -58,6 +58,14 @@ public final class CraftingTableContainer extends Container {
     }
 
     @Override
+    public boolean setPredictedItem(final int slot, final BedrockItem item) {
+        // Bedrock identifies crafting-table input as HUD slots 32-40. Keep the request-local
+        // mirror in that same backing container; writing these slots to this Java 10-slot
+        // facade is out of bounds and leaves later response validation with stale items.
+        return this.user.get(InventoryTracker.class).getHudContainer().setPredictedItem(slot, item);
+    }
+
+    @Override
     public boolean setItems(final BedrockItem[] items) {
         return this.user.get(InventoryTracker.class).getHudContainer().setItems(items);
     }

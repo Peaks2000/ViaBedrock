@@ -26,8 +26,11 @@ public final class MovementPredictionTracker {
     private final NavigableMap<Long, Snapshot> snapshots = new TreeMap<>();
 
     public void record(final long tick, final Position3f position, final boolean onGround,
-                       final boolean horizontalCollision, final int rewindHistorySize) {
-        this.snapshots.put(tick, new Snapshot(position, onGround, horizontalCollision, false, false));
+                       final boolean horizontalCollision, final boolean continuousVerticalMovement,
+                       final int rewindHistorySize) {
+        this.snapshots.put(tick, new Snapshot(
+            position, onGround, horizontalCollision, continuousVerticalMovement, false, false
+        ));
 
         // A rewind size of N permits the current tick and N earlier ticks.
         final int retainedSnapshots = Math.max(1, rewindHistorySize + 1);
@@ -42,7 +45,8 @@ public final class MovementPredictionTracker {
      */
     public Correction replay(final long tick, final Position3f authoritativePosition, final boolean authoritativeOnGround,
                              final long currentTick, final Position3f currentPosition, final boolean currentOnGround,
-                             final boolean currentHorizontalCollision, final boolean verticalStabilizationInput) {
+                             final boolean currentHorizontalCollision, final boolean verticalStabilizationInput,
+                             final boolean currentContinuousVerticalMovement) {
         final Snapshot correctedSnapshot = this.snapshots.get(tick);
         if (correctedSnapshot == null || tick > currentTick) {
             return new Correction(authoritativePosition, authoritativeOnGround, false);
@@ -55,6 +59,7 @@ public final class MovementPredictionTracker {
         this.snapshots.tailMap(tick, true).replaceAll((snapshotTick, snapshot) ->
             new Snapshot(
                 snapshot.position().add(correctionDelta), snapshot.onGround(), snapshot.horizontalCollision(),
+                snapshot.continuousVerticalMovement(),
                 snapshot.correctedX() || correctedX, snapshot.correctedZ() || correctedZ
             )
         );
@@ -70,17 +75,21 @@ public final class MovementPredictionTracker {
         final boolean stabilizeX = collisionReplay && (correctedSnapshot.correctedX() || correctedX);
         final boolean stabilizeZ = collisionReplay && (correctedSnapshot.correctedZ() || correctedZ);
         // Replaying an old Y correction onto a newer downward position makes slopes,
-        // crouched block edges, and creative-flight descent snap on every rewind. Grounded
-        // movement retains the established measurable-descent guard. Java can briefly clear
-        // onGround at a crouched edge, and consecutive flight packets can carry the same Y,
-        // so Shift additionally stabilizes a non-ascending position in both modes. This remains
-        // historical-only: same-tick corrections stay authoritative, while a genuinely newer
-        // upward position still replays the delta so jumps and steps are preserved.
+        // crouched block edges, creative flight, and climbable blocks snap on every rewind.
+        // Grounded movement retains the established measurable-descent guard. Java can briefly
+        // clear onGround at a crouched edge, so Shift additionally stabilizes a non-ascending
+        // position. Flight and climbing are continuous vertical movement modes: preserve Java's
+        // newer Y in either direction while replaying an old tick. This remains historical-only,
+        // so same-tick host corrections stay authoritative and ordinary jumps/steps retain their
+        // established replay behavior.
         final boolean laterVerticalDescent = tick < currentTick
             && currentPosition.y() < correctedSnapshot.position().y() - 0.0001F;
         final boolean laterNonAscendingPosition = tick < currentTick
             && currentPosition.y() <= correctedSnapshot.position().y() + 0.0001F;
-        final boolean stabilizeVertical = (laterVerticalDescent && currentOnGround)
+        final boolean continuousVerticalMovement = correctedSnapshot.continuousVerticalMovement()
+            || currentContinuousVerticalMovement;
+        final boolean stabilizeVertical = (tick < currentTick && continuousVerticalMovement)
+            || (laterVerticalDescent && currentOnGround)
             || (laterNonAscendingPosition && verticalStabilizationInput);
         final Position3f replayedPosition = new Position3f(
             stabilizeX ? authoritativePosition.x() : currentPosition.x() + correctionDelta.x(),
@@ -98,6 +107,6 @@ public final class MovementPredictionTracker {
     }
 
     private record Snapshot(Position3f position, boolean onGround, boolean horizontalCollision,
-                            boolean correctedX, boolean correctedZ) {
+                            boolean continuousVerticalMovement, boolean correctedX, boolean correctedZ) {
     }
 }
