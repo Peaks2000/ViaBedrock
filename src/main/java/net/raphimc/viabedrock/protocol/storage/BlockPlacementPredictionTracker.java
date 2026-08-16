@@ -23,6 +23,7 @@ import com.viaversion.viaversion.api.minecraft.BlockPosition;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -31,9 +32,11 @@ import java.util.concurrent.TimeUnit;
 public final class BlockPlacementPredictionTracker implements StorableObject {
 
     public static final long DEFAULT_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(2L);
+    private static final int MAX_RECENT_PLACEMENT_SOUNDS = 64;
 
     private final long timeoutNanos;
     private final Deque<PendingPlacement> pendingPlacements = new ArrayDeque<>();
+    private final Deque<RecentPlacementSound> recentPlacementSounds = new ArrayDeque<>();
     private int highestRequestedAcknowledgement;
     private int lastSentAcknowledgement;
 
@@ -67,6 +70,13 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         this.pendingPlacements.addLast(new PendingPlacement(
             sequence, clickedPosition, expectedUpdatePosition, nowNanos, kind
         ));
+        if (kind == PredictionKind.PLACEMENT) {
+            this.pruneRecentPlacementSounds(nowNanos);
+            while (this.recentPlacementSounds.size() >= MAX_RECENT_PLACEMENT_SOUNDS) {
+                this.recentPlacementSounds.removeFirst();
+            }
+            this.recentPlacementSounds.addLast(new RecentPlacementSound(expectedUpdatePosition, nowNanos));
+        }
     }
 
     /**
@@ -106,6 +116,23 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         return !authoritativeAir && this.isPendingBreaking(position);
     }
 
+    /**
+     * Consumes one recently predicted local placement at the sound event's block position.
+     * Some client-hosted Bedrock worlds omit the actor unique id from their placement echo,
+     * so this provides a bounded, one-shot identity fallback without muting unrelated sounds.
+     */
+    public boolean consumeLocalPlacementSound(final BlockPosition position, final long nowNanos) {
+        this.pruneRecentPlacementSounds(nowNanos);
+        final Iterator<RecentPlacementSound> iterator = this.recentPlacementSounds.iterator();
+        while (iterator.hasNext()) {
+            if (iterator.next().position.equals(position)) {
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
     public int requestAcknowledgement(final int sequence) {
         this.highestRequestedAcknowledgement = Math.max(this.highestRequestedAcknowledgement, sequence);
         // Java acknowledgements are cumulative, so never pass an unresolved placement sequence.
@@ -130,6 +157,7 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
     }
 
     public Expiration expire(final long nowNanos) {
+        this.pruneRecentPlacementSounds(nowNanos);
         final Set<BlockPosition> resyncPositions = new LinkedHashSet<>();
         for (PendingPlacement pending : this.pendingPlacements) {
             if (!pending.resolved && nowNanos - pending.startedAtNanos >= this.timeoutNanos) {
@@ -139,6 +167,13 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
             }
         }
         return new Expiration(new ArrayList<>(resyncPositions));
+    }
+
+    private void pruneRecentPlacementSounds(final long nowNanos) {
+        while (!this.recentPlacementSounds.isEmpty()
+            && nowNanos - this.recentPlacementSounds.peekFirst().startedAtNanos >= this.timeoutNanos) {
+            this.recentPlacementSounds.removeFirst();
+        }
     }
 
     public record Expiration(List<BlockPosition> resyncPositions) {
@@ -179,5 +214,8 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
     private enum PredictionKind {
         PLACEMENT,
         BREAKING
+    }
+
+    private record RecentPlacementSound(BlockPosition position, long startedAtNanos) {
     }
 }

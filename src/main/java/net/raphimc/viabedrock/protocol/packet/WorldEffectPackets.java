@@ -53,6 +53,7 @@ import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.BreakingTracker;
+import net.raphimc.viabedrock.protocol.storage.BlockPlacementPredictionTracker;
 import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
@@ -164,11 +165,14 @@ public class WorldEffectPackets {
             wrapper.read(BedrockTypes.OPTIONAL_POSITION_3F); // fire at position
 
             if (shouldSuppressLocalBlockPlaceSound(
-                    soundEvent, entityUniqueId, wrapper.user().get(EntityTracker.class).getClientPlayer().uniqueId())) {
+                    soundEvent, entityUniqueId, wrapper.user().get(EntityTracker.class).getClientPlayer().uniqueId(),
+                    levelEventBlockPosition(position), wrapper.user().get(BlockPlacementPredictionTracker.class),
+                    System.nanoTime())) {
                 // Java already plays the placed block's exact local sound immediately. Bedrock
-                // echoes a second `place` event for the same player; translating it can also fall
-                // back to stone when its block runtime data is unavailable. Preserve remote
-                // players' placement sounds and suppress only this duplicate local echo.
+                // echoes a second `place` event for the same player; client-hosted worlds can omit
+                // its actor id and its block runtime data can fall back to stone. Preserve remote
+                // players' placement sounds by using the actor id first, then a bounded one-shot
+                // match against the local Java placement prediction only when the id is absent.
                 wrapper.cancel();
                 return;
             }
@@ -703,6 +707,23 @@ public class WorldEffectPackets {
     public static boolean shouldSuppressLocalBlockPlaceSound(final String soundEvent, final long eventUniqueId,
                                                               final long clientUniqueId) {
         return "place".equals(soundEvent) && clientUniqueId != 0L && eventUniqueId == clientUniqueId;
+    }
+
+    public static boolean shouldSuppressLocalBlockPlaceSound(final String soundEvent, final long eventUniqueId,
+                                                              final long clientUniqueId, final BlockPosition position,
+                                                              final BlockPlacementPredictionTracker predictionTracker,
+                                                              final long nowNanos) {
+        if (!"place".equals(soundEvent)) {
+            return false;
+        }
+        if (clientUniqueId != 0L && eventUniqueId == clientUniqueId) {
+            if (predictionTracker != null) {
+                predictionTracker.consumeLocalPlacementSound(position, nowNanos);
+            }
+            return true;
+        }
+        return eventUniqueId == 0L && predictionTracker != null
+            && predictionTracker.consumeLocalPlacementSound(position, nowNanos);
     }
 
     private static SoundDefinitions.ConfiguredSound tryFindSound(final UserConnection user, final String soundEvent, final int data, final String entityIdentifier, final boolean isBabyMob) {
