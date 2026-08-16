@@ -720,20 +720,39 @@ public class ClientPlayerPackets {
                 return;
             }
 
-            wrapper.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
-            wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
-            wrapper.write(BedrockTypes.FLOAT_LE, 0F); // data
-            wrapper.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source // TODO: 1.21.130
-
-            if (clientPlayer.blockBreakingInfo() != null) {
-                if (!gameSession.isBlockBreakingServerAuthoritative()) {
-                    final ClientPlayerEntity.BlockBreakingInfo blockBreakingInfo = clientPlayer.blockBreakingInfo();
-                    clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.CrackBlock, blockBreakingInfo.position(), blockBreakingInfo.direction().ordinal()));
-                }
+            final ClientPlayerEntity.BlockBreakingInfo blockBreakingInfo = clientPlayer.blockBreakingInfo();
+            final SwingHandling swingHandling = swingHandling(
+                blockBreakingInfo != null, gameSession.isBlockBreakingServerAuthoritative()
+            );
+            if (swingHandling.forwardAnimation()) {
+                wrapper.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
+                wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
+                wrapper.write(BedrockTypes.FLOAT_LE, 0F); // data
+                wrapper.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source // TODO: 1.21.130
             } else {
+                // Java animates the hand on every mining tick. Bedrock needs only the explicit
+                // start animation; forwarding the repeats echoes attack.nodamage after the break.
+                wrapper.cancel();
+            }
+
+            if (swingHandling.sendCrackBlock()) {
+                clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(
+                    PlayerActionType.CrackBlock, blockBreakingInfo.position(), blockBreakingInfo.direction().ordinal()
+                ));
+            } else if (swingHandling.sendMissedSwing()) {
                 clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.MissedSwing);
             }
         });
+    }
+
+    public static SwingHandling swingHandling(final boolean blockBreaking,
+                                               final boolean serverAuthoritativeBreaking) {
+        return blockBreaking
+            ? new SwingHandling(false, !serverAuthoritativeBreaking, false)
+            : new SwingHandling(true, false, true);
+    }
+
+    public record SwingHandling(boolean forwardAnimation, boolean sendCrackBlock, boolean sendMissedSwing) {
     }
 
     /** Maps Java's vertical keys to the continuous Bedrock input flags for this tick. */
