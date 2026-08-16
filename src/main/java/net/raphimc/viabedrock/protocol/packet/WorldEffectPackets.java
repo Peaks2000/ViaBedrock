@@ -160,8 +160,18 @@ public class WorldEffectPackets {
             final String entityIdentifier = wrapper.read(BedrockTypes.STRING); // entity identifier
             final boolean isBabyMob = wrapper.read(Types.BOOLEAN); // is baby mob
             final boolean isGlobal = wrapper.read(Types.BOOLEAN); // is global sound
-            wrapper.read(BedrockTypes.LONG_LE); // entity unique id
+            final long entityUniqueId = wrapper.read(BedrockTypes.LONG_LE); // entity unique id
             wrapper.read(BedrockTypes.OPTIONAL_POSITION_3F); // fire at position
+
+            if (shouldSuppressLocalBlockPlaceSound(
+                    soundEvent, entityUniqueId, wrapper.user().get(EntityTracker.class).getClientPlayer().uniqueId())) {
+                // Java already plays the placed block's exact local sound immediately. Bedrock
+                // echoes a second `place` event for the same player; translating it can also fall
+                // back to stone when its block runtime data is unavailable. Preserve remote
+                // players' placement sounds and suppress only this duplicate local echo.
+                wrapper.cancel();
+                return;
+            }
 
             final boolean globalSound = isGlobal || Float.isNaN(position.x()) || Float.isNaN(position.y()) || Float.isNaN(position.z());
             SoundDefinitions.ConfiguredSound configuredSound;
@@ -688,6 +698,11 @@ public class WorldEffectPackets {
             if (identifier.startsWith(prefix)) return identifier.substring(prefix.length());
         }
         return identifier;
+    }
+
+    public static boolean shouldSuppressLocalBlockPlaceSound(final String soundEvent, final long eventUniqueId,
+                                                              final long clientUniqueId) {
+        return "place".equals(soundEvent) && clientUniqueId != 0L && eventUniqueId == clientUniqueId;
     }
 
     private static SoundDefinitions.ConfiguredSound tryFindSound(final UserConnection user, final String soundEvent, final int data, final String entityIdentifier, final boolean isBabyMob) {

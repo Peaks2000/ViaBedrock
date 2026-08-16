@@ -92,6 +92,7 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -356,7 +357,7 @@ public class InventoryPackets {
             }
 
             final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
-            final Set<Container> correctedContainers = Collections.newSetFromMap(new IdentityHashMap<>());
+            final Map<Container, Set<Integer>> correctedSlots = new IdentityHashMap<>();
             if (transaction.actions() != null) {
                 for (InventoryActionData action : transaction.actions()) {
                     if (action.source().type() != InventorySourceType.Container_Inventory) {
@@ -365,21 +366,33 @@ public class InventoryPackets {
 
                     final Container container = inventoryTracker.getContainerClientbound((byte) action.source().containerId(), null, null);
                     if (container != null && container.setItem(action.slot(), action.toItem())) {
-                        if (container == inventoryTracker.getInventoryContainer()
-                            || container == inventoryTracker.getArmorContainer()
-                            || container == inventoryTracker.getOffhandContainer()) {
-                            correctedContainers.add(inventoryTracker.getInventoryContainer());
-                        } else {
-                            correctedContainers.add(container);
-                        }
+                        correctedSlots.computeIfAbsent(container, key -> new HashSet<>()).add(action.slot());
                     } else if (container == null) {
                         ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received inventory action for unknown container ID: " + action.source().containerId());
                     }
                 }
             }
 
-            for (Container container : correctedContainers) {
-                PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
+            boolean refreshCombinedPlayerInventory = false;
+            for (Map.Entry<Container, Set<Integer>> entry : correctedSlots.entrySet()) {
+                final Container container = entry.getKey();
+                if (isPlayerInventoryContainer(inventoryTracker, container)) {
+                    if (preserveCreativeCursor(wrapper.user(), inventoryTracker, container)) {
+                        // A normal Bedrock InventoryTransaction can immediately follow a rejected
+                        // creative offhand move. Publishing a combined player refresh here would
+                        // carry Bedrock's empty HUD cursor and erase the item we just restored.
+                        for (int slot : entry.getValue()) {
+                            PacketFactory.sendJavaContainerSetSlot(wrapper.user(), container, slot);
+                        }
+                    } else {
+                        refreshCombinedPlayerInventory = true;
+                    }
+                } else {
+                    PacketFactory.sendJavaContainerSetContent(wrapper.user(), container);
+                }
+            }
+            if (refreshCombinedPlayerInventory) {
+                PacketFactory.sendJavaContainerSetContent(wrapper.user(), inventoryTracker.getInventoryContainer());
             }
             if (transaction.transactionType() != ComplexInventoryTransaction_Type.NormalTransaction) {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received unsupported inventory transaction type: " + transaction.transactionType());
@@ -904,10 +917,20 @@ public class InventoryPackets {
 
     private static boolean preserveCreativeCursor(final UserConnection user, final InventoryTracker inventoryTracker,
                                                   final Container container) {
-        return user.get(EntityTracker.class).getClientPlayer().javaGameMode() == GameMode.CREATIVE
-            && (container == inventoryTracker.getInventoryContainer()
-                || container == inventoryTracker.getArmorContainer()
-                || container == inventoryTracker.getOffhandContainer());
+        return shouldPreserveCreativeCursor(
+            user.get(EntityTracker.class).getClientPlayer().javaGameMode(),
+            isPlayerInventoryContainer(inventoryTracker, container)
+        );
+    }
+
+    public static boolean shouldPreserveCreativeCursor(final GameMode javaGameMode, final boolean playerInventoryContainer) {
+        return javaGameMode == GameMode.CREATIVE && playerInventoryContainer;
+    }
+
+    private static boolean isPlayerInventoryContainer(final InventoryTracker inventoryTracker, final Container container) {
+        return container == inventoryTracker.getInventoryContainer()
+            || container == inventoryTracker.getArmorContainer()
+            || container == inventoryTracker.getOffhandContainer();
     }
 
     private static void handleContainerClick(final UserConnection user, final int containerId, final int revision,
