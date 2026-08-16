@@ -75,7 +75,9 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
             while (this.recentPlacementSounds.size() >= MAX_RECENT_PLACEMENT_SOUNDS) {
                 this.recentPlacementSounds.removeFirst();
             }
-            this.recentPlacementSounds.addLast(new RecentPlacementSound(expectedUpdatePosition, nowNanos));
+            this.recentPlacementSounds.addLast(new RecentPlacementSound(
+                clickedPosition, expectedUpdatePosition, nowNanos
+            ));
         }
     }
 
@@ -125,7 +127,7 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         this.pruneRecentPlacementSounds(nowNanos);
         final Iterator<RecentPlacementSound> iterator = this.recentPlacementSounds.iterator();
         while (iterator.hasNext()) {
-            if (iterator.next().position.equals(position)) {
+            if (iterator.next().matches(position)) {
                 iterator.remove();
                 return true;
             }
@@ -216,6 +218,11 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         BREAKING
     }
 
-    private record RecentPlacementSound(BlockPosition position, long startedAtNanos) {
+    private record RecentPlacementSound(BlockPosition clickedPosition, BlockPosition expectedUpdatePosition,
+                                        long startedAtNanos) {
+
+        private boolean matches(final BlockPosition position) {
+            return this.clickedPosition.equals(position) || this.expectedUpdatePosition.equals(position);
+        }
     }
 }
