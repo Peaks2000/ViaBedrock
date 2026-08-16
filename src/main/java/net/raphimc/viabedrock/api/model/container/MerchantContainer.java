@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Java merchant view backed by Bedrock's trade UI slots. */
 public final class MerchantContainer extends Container {
@@ -48,6 +49,14 @@ public final class MerchantContainer extends Container {
 
     public List<BedrockTradeOffer> offers() {
         return this.offers;
+    }
+
+    public static boolean matchesCost(final BedrockItem item, final BedrockItem cost) {
+        if (cost == null || cost.isEmpty()) return true;
+        if (item == null || item.isEmpty() || item.identifier() != cost.identifier()) return false;
+        if (!cost.hasWildcardData()) return !item.isDifferent(cost);
+        return (cost.blockRuntimeId() == 0 || item.blockRuntimeId() == cost.blockRuntimeId())
+            && Objects.equals(item.tag(), cost.tag());
     }
 
     public void selectTrade(final int index) {
@@ -177,14 +186,15 @@ public final class MerchantContainer extends Container {
         int remaining = cost.amount();
         for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
             final BedrockItem source = inventory.getItem(slot);
-            if (source.isEmpty() || source.isDifferent(cost)) continue;
+            if (!matchesCost(source, cost)) continue;
             final int count = Math.min(remaining, source.amount());
             final BedrockItem target = this.getItem(paymentSlot);
+            if (!target.isEmpty() && target.isDifferent(source)) continue;
             actions.add(new InventoryStackRequest.Place(
                 count, this.requestSlot(inventory, slot, source), this.requestSlot(this, paymentSlot, target)
             ));
             inventory.setPredictedItem(slot, this.withRemovedAmount(source, count, requestId));
-            final BedrockItem filled = target.isEmpty() ? cost.copy() : target.copy();
+            final BedrockItem filled = target.isEmpty() ? source.copy() : target.copy();
             filled.setAmount(target.amount() + count);
             filled.setNetId(requestId);
             this.setPredictedItem(paymentSlot, filled);
@@ -220,7 +230,7 @@ public final class MerchantContainer extends Container {
     }
 
     private boolean hasPayment(final int slot, final BedrockItem cost) {
-        return cost.isEmpty() || (!this.getItem(slot).isDifferent(cost) && this.getItem(slot).amount() >= cost.amount());
+        return matchesCost(this.getItem(slot), cost) && this.getItem(slot).amount() >= cost.amount();
     }
 
     private void consumePayment(final int slot, final int amount, final int requestId) {

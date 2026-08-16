@@ -43,6 +43,12 @@ public record Position3f(float x, float y, float z) {
         return new Position3f(this.x - position.x, this.y - position.y, this.z - position.z);
     }
 
+    public Position3f withOptionalCoordinates(final boolean hasX, final float x,
+                                              final boolean hasY, final float y,
+                                              final boolean hasZ, final float z) {
+        return new Position3f(hasX ? x : this.x, hasY ? y : this.y, hasZ ? z : this.z);
+    }
+
     public float distanceTo(final Position3f position) {
         return (float) Math.sqrt(Math.pow(this.x - position.x, 2) + Math.pow(this.y - position.y, 2) + Math.pow(this.z - position.z, 2));
     }

@@ -23,6 +23,10 @@ import java.util.UUID;
 
 public record CommandOriginData(CommandOriginType type, UUID uuid, String requestId, long uniquePlayerId) {
 
+    public static CommandOriginData player(final UUID uuid, final long uniquePlayerId) {
+        return new CommandOriginData(CommandOriginType.Player, uuid, "", uniquePlayerId);
+    }
+
     public CommandOriginData(final CommandOriginType type, final UUID uuid, final String requestId) {
         this(type, uuid, requestId, 0);
     }

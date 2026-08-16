@@ -26,6 +26,8 @@ import java.util.Objects;
 
 public class BedrockItem implements Item {
 
+    public static final int WILDCARD_AUX_VALUE = Short.MAX_VALUE;
+
     private int id;
     private short data;
     private byte amount;
@@ -98,6 +100,10 @@ public class BedrockItem implements Item {
 
     public void setData(final int data) {
         this.setData((short) data);
+    }
+
+    public boolean hasWildcardData() {
+        return (this.data & 0xFFFF) == WILDCARD_AUX_VALUE;
     }
 
     @Override

@@ -198,6 +198,8 @@ public class EntityPackets {
                     return;
                 }
                 entity.setPosition(position);
+                entity.setRotation(new Position3f(pitch, yaw, headYaw));
+                entity.setOnGround(onGround);
 
                 if (teleported) {
                     wrapper.setPacketType(ClientboundPackets26_1.PLAYER_POSITION);
@@ -267,7 +269,13 @@ public class EntityPackets {
                     return;
                 }
 
-                entity.setPosition(new Position3f(x, y, z));
+                entity.setPosition(entity.position().withOptionalCoordinates(hasX, x, hasY, y, hasZ, z));
+                entity.setRotation(entity.rotation().withOptionalCoordinates(
+                    hasPitch, MathUtil.byte2Float(pitch),
+                    hasYaw, MathUtil.byte2Float(yaw),
+                    hasHeadYaw, MathUtil.byte2Float(headYaw)
+                ));
+                entity.setOnGround(onGround);
 
                 wrapper.clearPacket();
                 if (teleported) {
@@ -288,23 +296,13 @@ public class EntityPackets {
                 return;
             }
 
-            if (hasX) {
-                entity.setPosition(new Position3f(x, entity.position().y(), entity.position().z()));
-            }
-            if (hasY) {
-                entity.setPosition(new Position3f(entity.position().x(), y, entity.position().z()));
-            }
-            if (hasZ) {
-                entity.setPosition(new Position3f(entity.position().x(), entity.position().y(), z));
-            }
-            if (hasPitch) {
-                entity.setRotation(new Position3f(MathUtil.byte2Float(pitch), entity.rotation().y(), entity.rotation().z()));
-            }
-            if (hasYaw) {
-                entity.setRotation(new Position3f(entity.rotation().x(), MathUtil.byte2Float(yaw), entity.rotation().z()));
-            }
+            entity.setPosition(entity.position().withOptionalCoordinates(hasX, x, hasY, y, hasZ, z));
+            entity.setRotation(entity.rotation().withOptionalCoordinates(
+                hasPitch, MathUtil.byte2Float(pitch),
+                hasYaw, MathUtil.byte2Float(yaw),
+                hasHeadYaw, MathUtil.byte2Float(headYaw)
+            ));
             if (hasHeadYaw) {
-                entity.setRotation(new Position3f(entity.rotation().x(), entity.rotation().y(), MathUtil.byte2Float(headYaw)));
                 PacketFactory.sendJavaRotateHead(wrapper.user(), entity);
             }
             entity.setOnGround(onGround);

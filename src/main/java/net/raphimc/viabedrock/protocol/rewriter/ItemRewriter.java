@@ -140,7 +140,10 @@ public class ItemRewriter extends StoredObject {
             }
             javaItemMapping = blockItemMappings.get(this.user().get(BlockStateRewriter.class).blockState(bedrockItem.blockRuntimeId()));
         } else {
-            final int meta = bedrockItem.data() & 0xFFFF;
+            // Trade ingredients use 32767 as an any-aux wildcard. Java still needs a
+            // concrete item model, so render its default metadata without discarding
+            // the wildcard retained by the Bedrock item used for request matching.
+            final int meta = bedrockItem.hasWildcardData() ? 0 : bedrockItem.data() & 0xFFFF;
             final String newIdentifier = BedrockProtocol.MAPPINGS.getBedrockItemUpgrader().upgradeMetaItem(identifier, meta);
             if (newIdentifier != null) {
                 final Map<BlockState, BedrockMappingData.JavaItemMapping> newBlockItemMappings = BedrockProtocol.MAPPINGS.getBedrockToJavaBlockItems().get(newIdentifier);

@@ -58,7 +58,11 @@ public class ChatPackets {
         @Override
         protected void register() {
             map(Types.STRING, BedrockTypes.STRING, c -> '/' + c); // command
-            handler(wrapper -> wrapper.write(BedrockTypes.COMMAND_ORIGIN_DATA, new CommandOriginData(CommandOriginType.Player, UUID.randomUUID(), ""))); // origin
+            handler(wrapper -> {
+                final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
+                wrapper.write(BedrockTypes.COMMAND_ORIGIN_DATA,
+                    CommandOriginData.player(UUID.randomUUID(), clientPlayer.uniqueId())); // origin
+            });
             create(Types.BOOLEAN, false); // is internal
             create(BedrockTypes.STRING, ProtocolConstants.BEDROCK_COMMAND_VERSION); // version
             handler(PacketWrapper::clearInputBuffer);
