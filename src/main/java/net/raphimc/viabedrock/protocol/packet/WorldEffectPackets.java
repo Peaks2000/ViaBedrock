@@ -59,6 +59,7 @@ import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Level;
 
@@ -67,6 +68,10 @@ public class WorldEffectPackets {
     // Only log warnings about missing mappings if explicitly enabled for debugging
     // The Bedrock Dedicated Server sends a lot of unknown sound events which are expected to be ignored in most cases (Resource packs could add custom sounds for certain events)
     private static final boolean LEVEL_SOUND_DEBUG_LOG = false;
+    private static final Set<String> DYE_PREFIXES = Set.of(
+            "white_", "orange_", "magenta_", "light_blue_", "yellow_", "lime_", "pink_", "gray_",
+            "light_gray_", "cyan_", "purple_", "blue_", "brown_", "green_", "red_", "black_"
+    );
 
     public static void register(final BedrockProtocol protocol) {
         protocol.registerClientbound(ClientboundBedrockPackets.PLAY_SOUND, ClientboundPackets26_1.SOUND, wrapper -> {
@@ -237,7 +242,7 @@ public class WorldEffectPackets {
                             yield javaParticle.withParticle(particle);
                         }
                         case Terrain, BrushDust -> {
-                            final int javaBlockState = wrapper.user().get(BlockStateRewriter.class).javaId(data);
+                            final int javaBlockState = javaParticleBlockState(wrapper.user(), position, data);
                             if (javaBlockState != -1) {
                                 final Particle particle = new Particle(javaParticle.particle().id());
                                 particle.add(Types.VAR_INT, javaBlockState); // block state
@@ -341,7 +346,7 @@ public class WorldEffectPackets {
                     }
                     if (levelEventMapping instanceof BedrockMappingData.JavaLevelEvent javaLevelEvent) {
                         wrapper.write(Types.INT, javaLevelEvent.levelEvent().getValue()); // event id
-                        wrapper.write(Types.BLOCK_POSITION1_14, new BlockPosition((int) position.x(), (int) position.y(), (int) position.z())); // position
+                        wrapper.write(Types.BLOCK_POSITION1_14, levelEventBlockPosition(position)); // position
                         wrapper.write(Types.INT, switch (levelEvent) {
                             case ParticlesShoot, ParticlesShootWhiteSmoke -> switch (data % 9) {
                                 case 3, 0 -> Direction.WEST.ordinal();
@@ -351,7 +356,7 @@ public class WorldEffectPackets {
                                 default /* 1, 2 */ -> Direction.NORTH.ordinal();
                             };
                             case ParticlesDestroyBlock, ParticlesDestroyBlockNoSound -> {
-                                final int javaBlockState = wrapper.user().get(BlockStateRewriter.class).javaId(data);
+                                final int javaBlockState = javaParticleBlockState(wrapper.user(), position, data);
                                 if (javaBlockState != -1) {
                                     yield javaBlockState;
                                 } else {
@@ -392,7 +397,7 @@ public class WorldEffectPackets {
                             case ParticlesCrit -> javaParticle.withCount(data);
                             case ParticlesCrackBlock, ParticlesCrackBlockDown, ParticlesCrackBlockUp, ParticlesCrackBlockNorth,
                                  ParticlesCrackBlockSouth, ParticlesCrackBlockWest, ParticlesCrackBlockEast -> {
-                                final int javaBlockState = wrapper.user().get(BlockStateRewriter.class).javaId(data);
+                                final int javaBlockState = javaParticleBlockState(wrapper.user(), position, data);
                                 if (javaBlockState != -1) {
                                     final Particle particle = new Particle(javaParticle.particle().id());
                                     particle.add(Types.VAR_INT, javaBlockState); // block state
@@ -651,6 +656,38 @@ public class WorldEffectPackets {
             }
             wrapper.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getJavaBlocks().get(BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(blockStateRewriter.javaId(blockState)).namespacedIdentifier())); // block
         });
+    }
+
+    public static BlockPosition levelEventBlockPosition(final Position3f position) {
+        return new BlockPosition(MathUtil.floor(position.x()), MathUtil.floor(position.y()), MathUtil.floor(position.z()));
+    }
+
+    private static int javaParticleBlockState(final UserConnection user, final Position3f position, final int bedrockBlockState) {
+        final BlockStateRewriter blockStateRewriter = user.get(BlockStateRewriter.class);
+        final int eventState = blockStateRewriter.javaId(bedrockBlockState);
+        if (eventState == -1) return -1;
+
+        final int trackedState = user.get(ChunkTracker.class).getJavaBlockState(levelEventBlockPosition(position));
+        return sameParticleBlockFamily(eventState, trackedState) ? trackedState : eventState;
+    }
+
+    public static boolean sameParticleBlockFamily(final int firstState, final int secondState) {
+        final Map<Integer, BlockState> javaBlockStates = BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse();
+        final BlockState first = javaBlockStates.get(firstState);
+        final BlockState second = javaBlockStates.get(secondState);
+        return sameParticleBlockFamily(first, second);
+    }
+
+    public static boolean sameParticleBlockFamily(final BlockState first, final BlockState second) {
+        return first != null && second != null && !"air".equals(second.identifier())
+                && particleBlockFamily(first.identifier()).equals(particleBlockFamily(second.identifier()));
+    }
+
+    public static String particleBlockFamily(final String identifier) {
+        for (String prefix : DYE_PREFIXES) {
+            if (identifier.startsWith(prefix)) return identifier.substring(prefix.length());
+        }
+        return identifier;
     }
 
     private static SoundDefinitions.ConfiguredSound tryFindSound(final UserConnection user, final String soundEvent, final int data, final String entityIdentifier, final boolean isBabyMob) {

@@ -93,7 +93,7 @@ public class BlockEntityRewriter {
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.NETHER_REACTOR, NULL_REWRITER);
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SCULK_CATALYST, NOOP_REWRITER);
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SHELF, new ShelfBlockEntityRewriter());
-        BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SHULKER_BOX, new LootableContainerBlockEntityRewriter());
+        BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SHULKER_BOX, new ShulkerBoxBlockEntityRewriter());
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SIGN, new SignBlockEntityRewriter());
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SKULL, new SkullBlockEntityRewriter());
         BLOCK_ENTITY_REWRITERS.put(CustomBlockTags.SMOKER, new FurnaceBlockEntityRewriter());
