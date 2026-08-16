@@ -56,6 +56,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.generated.PlayerActionAct
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.EntityLink;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.storage.BlockPlacementPredictionTracker;
 import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
@@ -246,13 +247,21 @@ public class ExperimentalFeatures {
             boolean insideBlock = wrapper.read(Types.BOOLEAN); // inside block
             wrapper.read(Types.BOOLEAN); // world border, this doesn't exist on Bedrock.
 
-            // Send back block changed ack with the sequence, this will help with ghost blocks.
-            PacketFactory.sendJavaBlockChangedAck(wrapper.user(), wrapper.read(Types.VAR_INT));
+            final int sequence = wrapper.read(Types.VAR_INT);
 
             // The player can only interact using the main hand on Bedrock!
             if (hand != InteractionHand.MAIN_HAND) {
+                PacketFactory.sendJavaBlockChangedAck(wrapper.user(), sequence);
                 return;
             }
+
+            wrapper.user().get(BlockPlacementPredictionTracker.class).track(
+                    sequence,
+                    position,
+                    insideBlock ? position : position.getRelative(face),
+                    System.nanoTime()
+            );
+            PacketFactory.sendJavaBlockChangedAck(wrapper.user(), sequence);
 
             // The bedrock client will send a start item use on action to the server first.
             ExperimentalPacketFactory.sendBedrockPlayerAction(

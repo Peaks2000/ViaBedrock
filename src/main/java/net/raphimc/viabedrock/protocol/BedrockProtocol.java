@@ -151,6 +151,7 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
         Via.getPlatform().runRepeatingSync(new BlobCacheTickTask(), 2L);
         Via.getPlatform().runRepeatingSync(new EntityTrackerTickTask(), 1L);
         Via.getPlatform().runRepeatingSync(new InventoryTrackerTickTask(), 1L);
+        Via.getPlatform().runRepeatingSync(new BlockPlacementPredictionTickTask(), 1L);
 
         if (ViaBedrock.getConfig().shouldEnableExperimentalFeatures()) {
             ExperimentalFeatures.registerTasks();
@@ -174,6 +175,7 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
         user.put(new CreativeContentStorage(user));
         user.put(new CraftingRecipeStorage(user));
         user.put(new BreakingTracker(user));
+        user.put(new BlockPlacementPredictionTracker());
 
         if (ViaBedrock.getConfig().shouldEnableExperimentalFeatures()) {
             ExperimentalFeatures.registerStorages(user);

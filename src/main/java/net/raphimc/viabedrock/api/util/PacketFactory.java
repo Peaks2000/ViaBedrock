@@ -38,6 +38,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.EntityEvent;
 import net.raphimc.viabedrock.protocol.data.enums.java.GameEventType;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.CustomChatCompletionsAction;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.storage.BlockPlacementPredictionTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameRulesStorage;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
@@ -124,6 +125,30 @@ public class PacketFactory {
     }
 
     public static void sendJavaBlockChangedAck(final UserConnection user, final int sequence) {
+        final BlockPlacementPredictionTracker predictionTracker = user.get(BlockPlacementPredictionTracker.class);
+        if (predictionTracker != null) {
+            final int deliverableSequence = predictionTracker.requestAcknowledgement(sequence);
+            if (deliverableSequence < 0) {
+                return;
+            }
+            sendJavaBlockChangedAckDirect(user, deliverableSequence);
+            return;
+        }
+        sendJavaBlockChangedAckDirect(user, sequence);
+    }
+
+    public static void flushJavaBlockChangedAck(final UserConnection user) {
+        final BlockPlacementPredictionTracker predictionTracker = user.get(BlockPlacementPredictionTracker.class);
+        if (predictionTracker == null) {
+            return;
+        }
+        final int deliverableSequence = predictionTracker.pollAcknowledgement();
+        if (deliverableSequence >= 0) {
+            sendJavaBlockChangedAckDirect(user, deliverableSequence);
+        }
+    }
+
+    private static void sendJavaBlockChangedAckDirect(final UserConnection user, final int sequence) {
         final PacketWrapper blockChangedAck = PacketWrapper.create(ClientboundPackets26_1.BLOCK_CHANGED_ACK, user);
         blockChangedAck.write(Types.VAR_INT, sequence); // sequence number
         blockChangedAck.send(BedrockProtocol.class);

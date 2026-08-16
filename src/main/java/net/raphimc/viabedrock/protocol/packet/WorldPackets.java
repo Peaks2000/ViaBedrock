@@ -96,10 +96,18 @@ public class WorldPackets {
 
         wrapper.write(Types.VAR_INT, remappedBlock.keyInt()); // block state
 
-        if (remappedBlock.value() != null) {
+        final boolean placementConfirmed = layer == 0
+            && wrapper.user().get(BlockPlacementPredictionTracker.class).confirm(position);
+
+        if (remappedBlock.value() != null || placementConfirmed) {
             wrapper.send(BedrockProtocol.class);
             wrapper.cancel();
-            PacketFactory.sendJavaBlockEntityData(wrapper.user(), position, remappedBlock.value());
+            if (remappedBlock.value() != null) {
+                PacketFactory.sendJavaBlockEntityData(wrapper.user(), position, remappedBlock.value());
+            }
+            if (placementConfirmed) {
+                PacketFactory.flushJavaBlockChangedAck(wrapper.user());
+            }
         }
     };
 
@@ -426,6 +434,7 @@ public class WorldPackets {
 
             final Map<BlockPosition, List<BlockChangeRecord>> blockChanges = new HashMap<>();
             final Map<BlockPosition, BlockEntity> blockEntities = new HashMap<>();
+            boolean placementConfirmed = false;
             for (int layer = 0; layer < blockUpdatesArray.length; layer++) {
                 for (BlockChangeEntry entry : blockUpdatesArray[layer]) {
                     final int previousBlockState = chunkTracker.getBlockState(layer, entry.position());
@@ -437,6 +446,9 @@ public class WorldPackets {
                     }
                     if (remappedBlock.value() != null) {
                         blockEntities.put(entry.position(), remappedBlock.value());
+                    }
+                    if (layer == 0) {
+                        placementConfirmed |= wrapper.user().get(BlockPlacementPredictionTracker.class).confirm(entry.position());
                     }
 
                     final BlockPosition chunkPosition = new BlockPosition(entry.position().x() >> 4, entry.position().y() >> 4, entry.position().z() >> 4);
@@ -457,6 +469,9 @@ public class WorldPackets {
             }
             for (Map.Entry<BlockPosition, BlockEntity> entry : blockEntities.entrySet()) {
                 PacketFactory.sendJavaBlockEntityData(wrapper.user(), entry.getKey(), entry.getValue());
+            }
+            if (placementConfirmed) {
+                PacketFactory.flushJavaBlockChangedAck(wrapper.user());
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.BLOCK_ENTITY_DATA, ClientboundPackets26_1.BLOCK_ENTITY_DATA, new PacketHandlers() {
