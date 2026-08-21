@@ -19,7 +19,6 @@ package net.raphimc.viabedrock.protocol.types.model;
 
 import com.viaversion.viaversion.api.type.Type;
 import io.netty.buffer.ByteBuf;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SharedTypes_persona_ArmSizeType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SharedTypes_persona_PieceType;
 import net.raphimc.viabedrock.protocol.model.SkinData;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
@@ -31,11 +30,12 @@ import java.util.List;
 
 public class SkinType extends Type<SkinData> {
 
+    private static final int MAX_SKIN_ARRAY_ENTRIES = 4_096;
+
     public SkinType() {
         super(SkinData.class);
     }
 
-    // TODO
     @Override
     public SkinData read(ByteBuf buffer) {
         final String skinId = BedrockTypes.STRING.read(buffer);
@@ -43,13 +43,16 @@ public class SkinType extends Type<SkinData> {
         final String skinResourcePatch = BedrockTypes.STRING.read(buffer);
         final BufferedImage skinData = BedrockTypes.IMAGE.read(buffer);
 
-        final int animationCount = buffer.readIntLE();
+        // Protocol 2168 uses unsigned-varint array lengths and enum values here. Reading the
+        // former fixed-width layout shifts the cursor into creator-skin pixels and eventually
+        // treats arbitrary payload bytes as an image length.
+        final int animationCount = readArrayLength(buffer, "skin animations");
         final List<SkinData.AnimationData> animations = new ArrayList<>(animationCount);
         for (int i = 0; i < animationCount; i++) {
             final BufferedImage image = BedrockTypes.IMAGE.read(buffer);
-            final int type = buffer.readIntLE();
+            final int type = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
             final float frames = buffer.readFloatLE();
-            final int expression = buffer.readIntLE();
+            final int expression = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
             animations.add(new SkinData.AnimationData(image, type, frames, expression));
         }
 
@@ -60,24 +63,26 @@ public class SkinType extends Type<SkinData> {
         final String capeId = BedrockTypes.STRING.read(buffer);
         final String fullSkinId = BedrockTypes.STRING.read(buffer);
 
-        final String armSize = SharedTypes_persona_ArmSizeType.getByValue(buffer.readIntLE()).name();
+        final String armSize = buffer.readUnsignedByte() == 1 ? "Wide" : "Slim";
         final String skinColor = new Color(buffer.readIntLE(), true).toString();
 
-        final int piecesLength = buffer.readIntLE();
+        final int piecesLength = readArrayLength(buffer, "persona pieces");
         final List<SkinData.PersonaPieceData> personaPieces = new ArrayList<>(piecesLength);
         for (int i = 0; i < piecesLength; i++) {
             final String id = BedrockTypes.STRING.read(buffer);
-            final String type = SharedTypes_persona_PieceType.getByValue(buffer.readIntLE()).name();
+            final int rawType = buffer.readIntLE();
+            final SharedTypes_persona_PieceType pieceType = SharedTypes_persona_PieceType.getByValue(rawType);
+            final String type = pieceType != null ? pieceType.name() : Integer.toString(rawType);
             final String packId = BedrockTypes.UUID.read(buffer).toString();
             final boolean defaultPiece = buffer.readBoolean();
             final String productId = BedrockTypes.STRING.read(buffer);
             personaPieces.add(new SkinData.PersonaPieceData(id, type, packId, defaultPiece, productId));
         }
 
-        final int tintsLength = buffer.readIntLE();
+        final int tintsLength = readArrayLength(buffer, "persona tint colors");
         final List<SkinData.PersonaPieceTintData> tintColors = new ArrayList<>(tintsLength);
         for (int i = 0; i < tintsLength; i++) {
-            final String type = SharedTypes_persona_PieceType.getByValue(buffer.readIntLE()).name();
+            final String type = BedrockTypes.STRING.read(buffer);
             final List<String> colors = new ArrayList<>(4);
             for (int i2 = 0; i2 < 4; i2++) {
                 colors.add(new Color(buffer.readIntLE(), true).toString());
@@ -91,10 +96,20 @@ public class SkinType extends Type<SkinData> {
         final boolean primaryUser = buffer.readBoolean();
         final boolean overridingPlayerAppearance = buffer.readBoolean();
 
-        boolean trusted = "true".equalsIgnoreCase(BedrockTypes.STRING.read(buffer));
-        String profileHash = BedrockTypes.STRING.read(buffer);
+        // These fields are intentionally consumed even though the Java-facing SkinData model
+        // does not expose them. Leaving either behind corrupts the following PLAYER_SKIN fields.
+        BedrockTypes.STRING.read(buffer); // trusted flag
+        BedrockTypes.STRING.read(buffer); // profile hash
 
         return new SkinData(skinId, playFabId, skinResourcePatch, skinData, animations, capeData, geometryData, geometryDataEngineVersion, animationData, premium, persona, capeOnClassic, primaryUser, capeId, fullSkinId, armSize, skinColor, personaPieces, tintColors, overridingPlayerAppearance);
+    }
+
+    private static int readArrayLength(final ByteBuf buffer, final String field) {
+        final int length = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
+        if (length < 0 || length > MAX_SKIN_ARRAY_ENTRIES) {
+            throw new IllegalArgumentException("Invalid " + field + " length: " + Integer.toUnsignedString(length));
+        }
+        return length;
     }
 
     @Override
