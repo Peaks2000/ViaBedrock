@@ -59,6 +59,7 @@ import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.BlockEntityRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
+import net.raphimc.viabedrock.protocol.util.BoundedDiagnosticLimiter;
 
 import java.util.*;
 import java.util.logging.Level;
@@ -69,6 +70,7 @@ import java.util.stream.Collectors;
 public class ChunkTracker extends StoredObject {
 
     private static final byte[] FULL_LIGHT = new byte[ChunkSectionLight.LIGHT_LENGTH];
+    private static final int MAX_INVALID_LAYER_WARNING_PAIRS = 8;
 
     static {
         Arrays.fill(FULL_LIGHT, (byte) 0xFF);
@@ -85,6 +87,7 @@ public class ChunkTracker extends StoredObject {
     private final Set<SubChunkPosition> subChunkRequests = new HashSet<>();
     private final Set<SubChunkPosition> pendingSubChunks = new HashSet<>();
     private final Set<SubChunkPosition> refreshSubChunks = new HashSet<>();
+    private final BoundedDiagnosticLimiter invalidLayerWarningLimiter = new BoundedDiagnosticLimiter(MAX_INVALID_LAYER_WARNING_PAIRS);
 
     private int centerX = 0;
     private int centerZ = 0;
@@ -218,7 +221,7 @@ public class ChunkTracker extends StoredObject {
                         ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing waterlogged block state: " + blockState0);
                     }
                 } else {
-                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Invalid layer 2 block state. L1: " + blockState0 + ", L2: " + blockState1);
+                    this.warnInvalidLayerBlockState(blockState0, blockState1);
                 }
             }
         }
@@ -600,7 +603,7 @@ public class ChunkTracker extends StoredObject {
                                             ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing waterlogged block state: " + blockState0);
                                         }
                                     } else {
-                                        ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Invalid layer 2 block state. L1: " + blockState0 + ", L2: " + blockState1);
+                                        this.warnInvalidLayerBlockState(blockState0, blockState1);
                                     }
                                 }
                             }
@@ -709,6 +712,18 @@ public class ChunkTracker extends StoredObject {
         remappedChunk.heightmaps()[1] = new Heightmap(HeightmapType.MOTION_BLOCKING.ordinal(), CompactArrayUtil.createCompactArrayWithPadding(bitsPerEntry, motionBlocking.length, i -> motionBlocking[i]));
 
         return remappedChunk;
+    }
+
+    private void warnInvalidLayerBlockState(final int blockState0, final int blockState1) {
+        final long pairKey = ((long) blockState0 << 32) | (blockState1 & 0xFFFFFFFFL);
+        if (!this.invalidLayerWarningLimiter.shouldLog(pairKey)) return;
+
+        ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+            "Invalid layer 2 block state. L1: " + blockState0 + ", L2: " + blockState1);
+        if (this.invalidLayerWarningLimiter.isFull()) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+                "Further unique invalid layer 2 block-state warnings will be suppressed for this connection");
+        }
     }
 
     private void resolvePersistentIds(final BedrockChunkSection bedrockSection) {

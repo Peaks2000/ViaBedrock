@@ -142,6 +142,15 @@ public class LivingEntity extends Entity {
         this.attributes.put("minecraft:health", this.attributes.get("minecraft:health").withValue(health));
     }
 
+    public void restoreHealthAfterRespawn() {
+        final EntityAttribute currentHealth = this.attributes.get("minecraft:health");
+        this.updateAttributes(new EntityAttribute[]{respawnHealthAttribute(currentHealth)});
+    }
+
+    public static EntityAttribute respawnHealthAttribute(final EntityAttribute currentHealth) {
+        return currentHealth.withValue(currentHealth.computeMaxValue());
+    }
+
     public Map<String, EntityAttribute> attributes() {
         return this.attributes;
     }

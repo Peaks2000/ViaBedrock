@@ -197,10 +197,11 @@ public class OtherPlayerPackets {
 
             // A Bedrock death event sets the translated Java health metadata to zero. Remote
             // players respawn through MovePlayer rather than the local Respawn packet handler,
-            // so restore their health here to clear Java's death pose before moving them.
+            // so restore their health here to clear Java's death pose before moving them. Send
+            // the replacement attribute before mutating the stored value: creative players are
+            // invulnerable, and the normal duplicate/decrease guard would otherwise discard it.
             if (mode == PlayerPositionModeComponent_PositionMode.Respawn && entity instanceof PlayerEntity player) {
-                player.setHealth(player.attributes().get("minecraft:health").maxValue());
-                player.sendAttribute("minecraft:health");
+                player.restoreHealthAfterRespawn();
             }
 
             wrapper.write(Types.VAR_INT, entity.javaId()); // entity id

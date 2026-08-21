@@ -58,6 +58,8 @@ public class BlockStateRewriter implements StorableObject {
         final Map<String, String> blockTags = BedrockProtocol.MAPPINGS.getBedrockCustomBlockTags();
         final Set<String> bedrockBlockIdentifiers = bedrockBlockStates.stream().map(BedrockBlockState::namespacedIdentifier).collect(Collectors.toSet());
         final List<BedrockBlockState> customBlockStates = new ArrayList<>();
+        final List<String> missingBlockStateMappingSamples = new ArrayList<>();
+        int missingBlockStateMappingCount = 0;
 
         final Map<String, CompoundTag> effectiveBlockProperties = new HashMap<>();
         for (BlockProperties blockProperty : blockProperties) {
@@ -173,10 +175,19 @@ public class BlockStateRewriter implements StorableObject {
                 final int javaId = javaBlockStates.get(bedrockToJavaBlockStates.get(bedrockBlockState));
                 this.blockStateIdMappings.put(bedrockId, javaId);
             } else {
-                ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing bedrock -> java block state mapping: " + bedrockBlockState.toBlockStateString());
+                missingBlockStateMappingCount++;
+                if (missingBlockStateMappingSamples.size() < 8) {
+                    missingBlockStateMappingSamples.add(bedrockBlockState.toBlockStateString());
+                }
                 final int javaId = javaBlockStates.get(bedrockToJavaBlockStates.get(BedrockBlockState.INFO_UPDATE));
                 this.blockStateIdMappings.put(bedrockId, javaId);
             }
+        }
+
+        if (missingBlockStateMappingCount > 0) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+                "Missing " + missingBlockStateMappingCount + " bedrock -> java block state mapping(s); first "
+                    + missingBlockStateMappingSamples.size() + ": " + String.join(", ", missingBlockStateMappingSamples));
         }
 
         for (Int2ObjectMap.Entry<BedrockBlockState> entry : BedrockProtocol.MAPPINGS.getBedrockLegacyBlockStates().int2ObjectEntrySet()) {
