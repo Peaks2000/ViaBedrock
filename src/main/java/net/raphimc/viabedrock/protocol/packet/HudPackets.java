@@ -51,19 +51,31 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 
 public class HudPackets {
 
+    private static final int MAX_PLAYER_LIST_ENTRIES = 4_096;
+
     public static void register(final BedrockProtocol protocol) {
         protocol.registerClientbound(ClientboundBedrockPackets.PLAYER_LIST, ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper -> {
-            final PlayerListStorage playerListStorage = wrapper.user().get(PlayerListStorage.class);
-            final ScoreboardTracker scoreboardTracker = wrapper.user().get(ScoreboardTracker.class);
-
             wrapper.cancel();
+            try {
+                final int capturedSkins = captureInitialSkins(wrapper, (uuid, skin) ->
+                        Via.getManager().getProviders().get(SkinProvider.class).setSkin(wrapper.user(), uuid, skin));
+                if (capturedSkins > 0) {
+                    ViaBedrock.getPlatform().getLogger().log(Level.INFO,
+                            "Captured " + capturedSkins + " initial Bedrock player skin(s) locally");
+                }
+            } catch (Exception e) {
+                // This packet's unfinished Java player-list translation was already discarded.
+                // A malformed optional skin must not turn that existing limitation into a kick.
+                ViaBedrock.getPlatform().getLogger().log(Level.WARNING,
+                        "Could not capture initial Bedrock player skins; continuing without them", e);
+            }
             wrapper.clearPacket();
-            return;
 
             // TODO
             /*final byte rawAction = wrapper.read(Types.BYTE); // action
@@ -463,6 +475,51 @@ public class HudPackets {
             }
             wrapper.write(Types.BOOLEAN, true); // overlay
         });
+    }
+
+    /**
+     * Reads the protocol-2168 per-entry player-list layout while preserving ViaBedrock's existing
+     * behavior of discarding the unfinished Java list translation. Bedrock sends a full skin in
+     * each add entry; retaining it here lets local integrations render the correct skin before a
+     * later PLAYER_SKIN change packet arrives.
+     */
+    static int captureInitialSkins(final PacketWrapper wrapper,
+                                   final BiConsumer<UUID, SkinData> skinConsumer) throws InformativeException {
+        final int length = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
+        if (length < 0 || length > MAX_PLAYER_LIST_ENTRIES) {
+            throw new IllegalArgumentException("Invalid player-list length: " + Integer.toUnsignedString(length));
+        }
+
+        int capturedSkins = 0;
+        for (int i = 0; i < length; i++) {
+            final boolean add = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT) == 1;
+            final PlayerListPacketType action = PlayerListPacketType.getByValue(wrapper.read(Types.BYTE));
+            if (action == null || add != (action == PlayerListPacketType.Add)) {
+                throw new IllegalArgumentException("Inconsistent protocol-2168 player-list action");
+            }
+
+            final UUID uuid = wrapper.read(BedrockTypes.UUID);
+            if (action == PlayerListPacketType.Remove) {
+                continue;
+            }
+
+            wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
+            wrapper.read(BedrockTypes.STRING); // username
+            wrapper.read(BedrockTypes.STRING); // xuid
+            wrapper.read(BedrockTypes.STRING); // platform chat id
+            wrapper.read(BedrockTypes.INT_LE); // device OS
+            final SkinData skin = wrapper.read(BedrockTypes.SKIN);
+            wrapper.read(Types.BOOLEAN); // teacher
+            wrapper.read(Types.BOOLEAN); // host
+            wrapper.read(Types.BOOLEAN); // sub-client
+            wrapper.read(BedrockTypes.INT_LE); // player color
+
+            if (skin.skinData() != null) {
+                skinConsumer.accept(uuid, skin);
+                capturedSkins++;
+            }
+        }
+        return capturedSkins;
     }
 
 }
