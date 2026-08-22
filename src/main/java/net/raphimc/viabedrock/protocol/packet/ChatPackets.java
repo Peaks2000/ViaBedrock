@@ -109,6 +109,11 @@ public class ChatPackets {
                             case chat, whisper, announcement -> {
                                 final String sourceName = wrapper.read(BedrockTypes.STRING); // source name
                                 String message = originalMessage = wrapper.read(BedrockTypes.STRING); // message
+                                if (type == TextPacketType.chat && wrapper.user().get(PlayerChatDuplicateTracker.class)
+                                    .shouldSuppress(sourceName, message, localize, System.nanoTime())) {
+                                    wrapper.cancel();
+                                    return;
+                                }
                                 if (localize) {
                                     message = BedrockTranslator.translate(message, translator, new Object[0]);
                                 }
