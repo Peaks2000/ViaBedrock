@@ -86,7 +86,7 @@ public class LoginPackets {
             final String authInfo = authInfoObj.toString();
 
             final PacketWrapper login = PacketWrapper.create(ServerboundBedrockPackets.LOGIN, wrapper.user());
-            login.write(Types.INT, handshakeStorage.protocolVersion()); // protocol version
+            login.write(Types.INT, protocol.wireProtocolVersion(handshakeStorage.protocolVersion())); // protocol version
             login.write(BedrockTypes.UNSIGNED_VAR_INT, authInfo.length() + authData.getSkinJwt().length() + Integer.BYTES * 2); // length
             login.write(BedrockTypes.ASCII_STRING, authInfo); // auth info
             login.write(BedrockTypes.ASCII_STRING, authData.getSkinJwt()); // client properties
@@ -131,7 +131,7 @@ public class LoginPackets {
 
             final String javaUsername = wrapper.read(Types.STRING); // username
             wrapper.read(Types.UUID); // uuid
-            wrapper.write(Types.INT, handshakeStorage.protocolVersion()); // protocol version
+            wrapper.write(Types.INT, protocol.wireProtocolVersion(handshakeStorage.protocolVersion())); // protocol version
 
             if (!wrapper.user().has(AuthData.class)) { // Generate self-signed JWT if no AuthData has been provided by the implementation
                 final Instant now = Instant.now();

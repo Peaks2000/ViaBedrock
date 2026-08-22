@@ -190,13 +190,17 @@ public class ChunkTracker extends StoredObject {
 
     public int getJavaBlockState(final BlockPosition blockPosition) {
         final BedrockChunkSection chunkSection = this.getChunkSection(blockPosition);
-        if (chunkSection == null) return ProtocolConstants.JAVA_AIR_ID;
+        if (!hasBlockPalette(chunkSection)) return ProtocolConstants.JAVA_AIR_ID;
 
         final int sectionX = blockPosition.x() & 15;
         final int sectionY = blockPosition.y() & 15;
         final int sectionZ = blockPosition.z() & 15;
 
         return this.getJavaBlockState(chunkSection, sectionX, sectionY, sectionZ);
+    }
+
+    public static boolean hasBlockPalette(final BedrockChunkSection section) {
+        return section != null && section.palettesCount(PaletteType.BLOCKS) > 0;
     }
 
     public int getJavaBlockState(final BedrockChunkSection section, final int sectionX, final int sectionY, final int sectionZ) {

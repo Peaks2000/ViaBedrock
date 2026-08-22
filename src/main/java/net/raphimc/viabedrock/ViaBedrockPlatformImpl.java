@@ -18,6 +18,7 @@
 package net.raphimc.viabedrock;
 
 import com.viaversion.viaversion.api.Via;
+import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import net.raphimc.viabedrock.platform.ViaBedrockPlatform;
 
 import java.io.File;
@@ -30,6 +31,12 @@ public class ViaBedrockPlatformImpl implements ViaBedrockPlatform {
     public ViaBedrockPlatformImpl() {
         this.logger = Via.getPlatform().createLogger("ViaBedrock");
         this.init(new File(this.getDataFolder(), "viabedrock.yml"));
+    }
+
+    public ViaBedrockPlatformImpl(final ProtocolVersion routeVersion, final int wireProtocolVersion) {
+        this.logger = Via.getPlatform().createLogger("ViaBedrock-Compatibility");
+        this.init(new ViaBedrockConfig(new File(this.getDataFolder(), "viabedrock.yml"), this.logger),
+                routeVersion, wireProtocolVersion);
     }
 
     @Override

@@ -91,12 +91,30 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
             ClientboundBedrockPackets.PLAYER_LIST
     );
 
+    private final Integer wireProtocolOverride;
+
     static {
         BEFORE_PLAY_STATE_WHITELIST.addAll(LOGIN_STATE_WHITELIST);
     }
 
     public BedrockProtocol() {
         super(ClientboundBedrockPackets.class, ClientboundPackets26_1.class, ServerboundBedrockPackets.class, ServerboundPackets26_1.class);
+        this.wireProtocolOverride = null;
+    }
+
+    /**
+     * Creates an isolated compatibility route whose ViaVersion route identity is deliberately
+     * different from the Bedrock protocol sent on the wire. The ordinary-server runtime in
+     * ViaFabricPlus uses this to coexist with the maintained LAN/friends runtime without falling
+     * back to an older translator implementation.
+     */
+    public BedrockProtocol(final int wireProtocolOverride) {
+        super(ClientboundBedrockPackets.class, ClientboundPackets26_1.class, ServerboundBedrockPackets.class, ServerboundPackets26_1.class);
+        this.wireProtocolOverride = wireProtocolOverride;
+    }
+
+    public int wireProtocolVersion(final int requestedProtocolVersion) {
+        return this.wireProtocolOverride != null ? this.wireProtocolOverride : requestedProtocolVersion;
     }
 
     @Override

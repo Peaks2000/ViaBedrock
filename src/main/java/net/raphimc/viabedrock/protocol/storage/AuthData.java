@@ -116,6 +116,19 @@ public class AuthData implements StorableObject {
         return this.multiplayerTokenJwt.payload().get("xid").getAsString();
     }
 
+    /**
+     * Returns the authenticated player's PlayFab/Minecraft ID carried by the multiplayer token.
+     * Bedrock includes this identity alongside the login skin so peers can associate custom skin
+     * data with the authenticated player rather than silently retaining a cached/default skin.
+     */
+    public String getPlayFabId() {
+        if (!this.multiplayerTokenJwt.payload().has("mid")
+                || this.multiplayerTokenJwt.payload().get("mid").isJsonNull()) {
+            return "";
+        }
+        return this.multiplayerTokenJwt.payload().get("mid").getAsString();
+    }
+
     @Deprecated(forRemoval = true)
     public AuthData(final String mojangJwt, final String identityJwt, final String multiplayerToken, final KeyPair sessionKeyPair, final UUID deviceId) {
         this(multiplayerToken, sessionKeyPair, deviceId);

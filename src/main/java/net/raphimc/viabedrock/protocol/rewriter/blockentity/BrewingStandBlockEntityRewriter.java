@@ -35,7 +35,8 @@ public class BrewingStandBlockEntityRewriter implements BlockEntityRewriter.Rewr
         final CompoundTag bedrockTag = bedrockBlockEntity.tag();
         final CompoundTag javaTag = new CompoundTag();
 
-        List<CompoundTag> items = bedrockTag.getListTag("Items", CompoundTag.class).getValue();
+        final ListTag<CompoundTag> itemList = bedrockTag.getListTag("Items", CompoundTag.class);
+        List<CompoundTag> items = itemList != null ? itemList.getValue() : List.of();
         ListTag<CompoundTag> javaItems = new ListTag<>(CompoundTag.class);
         for (CompoundTag item : items) {
             CompoundTag javaItem = this.rewriteItem(user, item);

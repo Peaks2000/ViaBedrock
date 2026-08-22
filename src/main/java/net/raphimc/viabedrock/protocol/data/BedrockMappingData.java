@@ -353,6 +353,14 @@ public class BedrockMappingData extends MappingDataBase {
 
         { // Biomes
             this.bedrockBiomeDefinitions = SNBT.deserializeCompoundTag(this.readJson("bedrock/biome_definitions.json").toString()); // TODO: Jank
+            if (!this.bedrockBiomeDefinitions.contains("minecraft:dappled_forest")) {
+                final CompoundTag forest = this.bedrockBiomeDefinitions.getCompoundTag("minecraft:forest");
+                if (forest != null) {
+                    // The initial 1.26.40 data contains the numeric ID before its definition.
+                    // Use the closest vanilla definition until the server supplies its own.
+                    this.bedrockBiomeDefinitions.put("minecraft:dappled_forest", forest.copy());
+                }
+            }
 
             final JsonObject bedrockBiomesJson = this.readJson("bedrock/biomes.json", JsonObject.class);
             this.bedrockBiomes = HashBiMap.create(bedrockBiomesJson.size());
@@ -767,7 +775,9 @@ public class BedrockMappingData extends MappingDataBase {
                     final String[] keySplit = soundEventEntry.getKey().split(":", 2);
                     if (keySplit[0].equals("entity")) {
                         if (!this.bedrockEntities.containsKey(keySplit[1])) {
-                            throw new RuntimeException("Unknown bedrock entity: " + keySplit[1]);
+                            // Experimental sound variants may arrive before the corresponding
+                            // entity identifier. Keep the event's default and other valid variants.
+                            continue;
                         }
                     } else if (keySplit[0].equals("block")) {
                         if (!this.bedrockBlockSounds.containsValue(keySplit[1])) {

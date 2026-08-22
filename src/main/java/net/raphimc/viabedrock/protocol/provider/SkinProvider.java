@@ -61,6 +61,10 @@ public class SkinProvider implements Provider {
             claims.put("SkinResourcePatch", Base64.getEncoder().encodeToString("{\"geometry\":{\"default\":\"geometry.humanoid.custom\"}}".getBytes(StandardCharsets.UTF_8)));
             claims.put("SkinAnimationData", "");
             claims.put("SkinColor", "#0");
+            final String playFabId = authData.getPlayFabId();
+            if (!playFabId.isBlank()) {
+                claims.put("PlayFabId", playFabId.toLowerCase(Locale.ROOT));
+            }
             claims.put("PremiumSkin", false);
             claims.put("PersonaSkin", false);
             claims.put("TrustedSkin", false);

@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.platform;
 
 import com.viaversion.viaversion.api.Via;
 import com.viaversion.viaversion.api.protocol.ProtocolManager;
+import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.ViaBedrockConfig;
 import net.raphimc.viabedrock.api.BedrockProtocolVersion;
@@ -35,13 +36,28 @@ public interface ViaBedrockPlatform {
     }
 
     default void init(final net.raphimc.viabedrock.platform.ViaBedrockConfig config) {
+        this.init(config, BedrockProtocolVersion.bedrockLatest, new BedrockProtocol());
+    }
+
+    /**
+     * Initializes a second, classloader-isolated ViaBedrock route. Its route version remains
+     * distinct inside ViaVersion while the protocol implementation sends the current Bedrock
+     * wire version to the server.
+     */
+    default void init(final net.raphimc.viabedrock.platform.ViaBedrockConfig config,
+                      final ProtocolVersion routeVersion, final int wireProtocolVersion) {
+        this.init(config, routeVersion, new BedrockProtocol(wireProtocolVersion));
+    }
+
+    private void init(final net.raphimc.viabedrock.platform.ViaBedrockConfig config,
+                      final ProtocolVersion routeVersion, final BedrockProtocol protocol) {
         config.reload();
         Via.getManager().getConfigurationProvider().register(config);
         ViaBedrock.init(this, config);
         Via.getManager().getSubPlatforms().add(ViaBedrock.IMPL_VERSION);
 
         final ProtocolManager protocolManager = Via.getManager().getProtocolManager();
-        protocolManager.registerProtocol(new BedrockProtocol(), ProtocolConstants.JAVA_VERSION, BedrockProtocolVersion.bedrockLatest);
+        protocolManager.registerProtocol(protocol, ProtocolConstants.JAVA_VERSION, routeVersion);
 
         this.getServerPacksFolder().mkdirs();
         this.getBlobCacheFolder().mkdirs();
