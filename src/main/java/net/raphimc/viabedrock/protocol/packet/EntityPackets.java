@@ -43,6 +43,7 @@ import net.raphimc.viabedrock.api.util.TextUtil;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.Direction;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorDataIDs;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.AnimateAction;
 import net.raphimc.viabedrock.protocol.data.enums.java.Relative;
@@ -50,6 +51,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
 import net.raphimc.viabedrock.protocol.data.generated.java.EntityDataFields;
 import net.raphimc.viabedrock.protocol.data.generated.java.RegistryKeys;
 import net.raphimc.viabedrock.protocol.model.*;
+import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
@@ -126,7 +128,7 @@ public class EntityPackets {
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.x())); // pitch
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.y())); // yaw
             wrapper.write(Types.BYTE, MathUtil.float2Byte(rotation.z())); // head yaw
-            wrapper.write(Types.VAR_INT, 0); // data
+            wrapper.write(Types.VAR_INT, javaSpawnData(wrapper.user().get(BlockStateRewriter.class), type, entityData)); // data
             wrapper.send(BedrockProtocol.class);
             wrapper.cancel();
 
@@ -649,6 +651,28 @@ public class EntityPackets {
             wrapper.write(Types.VAR_INT, collectorEntity.javaId()); // collector entity id
             wrapper.write(Types.VAR_INT, collectedAmount); // amount
         });
+    }
+
+    public static int bedrockFallingBlockState(final String type, final EntityData[] entityData) {
+        if (!"minecraft:falling_block".equals(type)) return -1;
+
+        for (EntityData data : entityData) {
+            if (data.id() == ActorDataIDs.VARIANT.getValue() && data.value() instanceof Number blockState) {
+                return blockState.intValue();
+            }
+        }
+        return -1;
+    }
+
+    private static int javaSpawnData(final BlockStateRewriter blockStateRewriter, final String type, final EntityData[] entityData) {
+        final int bedrockBlockState = bedrockFallingBlockState(type, entityData);
+        if (bedrockBlockState == -1) return 0;
+
+        final int javaBlockState = blockStateRewriter.javaId(bedrockBlockState);
+        if (javaBlockState != -1) return javaBlockState;
+
+        ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing falling-block state: " + bedrockBlockState);
+        return 0;
     }
 
 }

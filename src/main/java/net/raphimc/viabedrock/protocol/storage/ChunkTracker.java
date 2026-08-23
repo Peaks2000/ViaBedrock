@@ -208,25 +208,26 @@ public class ChunkTracker extends StoredObject {
         final List<DataPalette> blockPalettes = section.palettes(PaletteType.BLOCKS);
 
         final int blockState0 = blockPalettes.get(0).idAt(sectionX, sectionY, sectionZ);
-        int remappedBlockState = blockStateRewriter.javaId(blockState0);
+        final int blockState1 = blockPalettes.size() > 1
+            ? blockPalettes.get(1).idAt(sectionX, sectionY, sectionZ)
+            : this.bedrockAirId();
+        final int visibleBlockState = visibleLayerBlockState(blockState0, blockState1, this.bedrockAirId());
+        int remappedBlockState = blockStateRewriter.javaId(visibleBlockState);
         if (remappedBlockState == -1) {
-            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing block state: " + blockState0);
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing block state: " + visibleBlockState);
             remappedBlockState = ProtocolConstants.JAVA_AIR_ID;
         }
 
-        if (blockState0 != this.bedrockAirId() && blockPalettes.size() > 1) {
-            final int blockState1 = blockPalettes.get(1).idAt(sectionX, sectionY, sectionZ);
-            if (blockState1 != this.bedrockAirId()) {
-                if (CustomBlockTags.WATER.equals(blockStateRewriter.tag(blockState1))) { // Waterlogging
-                    final int waterloggedBlockState = blockStateRewriter.waterlog(remappedBlockState);
-                    if (waterloggedBlockState != -1) {
-                        remappedBlockState = waterloggedBlockState;
-                    } else {
-                        ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing waterlogged block state: " + blockState0);
-                    }
+        if (blockState0 != this.bedrockAirId() && blockState1 != this.bedrockAirId()) {
+            if (CustomBlockTags.WATER.equals(blockStateRewriter.tag(blockState1))) { // Waterlogging
+                final int waterloggedBlockState = blockStateRewriter.waterlog(remappedBlockState);
+                if (waterloggedBlockState != -1) {
+                    remappedBlockState = waterloggedBlockState;
                 } else {
-                    this.warnInvalidLayerBlockState(blockState0, blockState1);
+                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing waterlogged block state: " + blockState0);
                 }
+            } else {
+                this.warnInvalidLayerBlockState(blockState0, blockState1);
             }
         }
 
@@ -597,7 +598,15 @@ public class ChunkTracker extends StoredObject {
                                     final int blockState1 = layer1.idAt(x, y, z);
                                     if (blockState1 == airId) continue;
                                     final int blockState0 = layer0.idAt(x, y, z);
-                                    if (blockState0 == airId) continue;
+                                    if (blockState0 == airId) {
+                                        final int javaBlockState = blockStateRewriter.javaId(blockState1);
+                                        if (javaBlockState != -1) {
+                                            remappedBlockPalette.setIdAt(x, y, z, javaBlockState);
+                                        } else {
+                                            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing block state: " + blockState1);
+                                        }
+                                        continue;
+                                    }
 
                                     if (CustomBlockTags.WATER.equals(blockStateRewriter.tag(blockState1))) { // Waterlogging
                                         final int waterloggedBlockState = blockStateRewriter.waterlog(remappedBlockPalette.idAt(x, y, z));
@@ -716,6 +725,10 @@ public class ChunkTracker extends StoredObject {
         remappedChunk.heightmaps()[1] = new Heightmap(HeightmapType.MOTION_BLOCKING.ordinal(), CompactArrayUtil.createCompactArrayWithPadding(bitsPerEntry, motionBlocking.length, i -> motionBlocking[i]));
 
         return remappedChunk;
+    }
+
+    public static int visibleLayerBlockState(final int blockState0, final int blockState1, final int airId) {
+        return blockState0 == airId && blockState1 != airId ? blockState1 : blockState0;
     }
 
     private void warnInvalidLayerBlockState(final int blockState0, final int blockState1) {

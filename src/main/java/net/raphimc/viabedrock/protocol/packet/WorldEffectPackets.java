@@ -301,6 +301,13 @@ public class WorldEffectPackets {
                 wrapper.cancel();
                 return;
             }
+            if (advancesJavaTimeToDawn(levelEvent)) {
+                // Client-hosted worlds can skip to dawn without broadcasting SetTime back to
+                // the hosting Bedrock client. Java does not perform that local sleep-time jump.
+                PacketFactory.sendJavaTime(wrapper.user(), 0L);
+                wrapper.cancel();
+                return;
+            }
             switch (levelEvent) {
                 case ParticleSoundGuardianGhost -> {
                     PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.GUARDIAN_ELDER_EFFECT, 1F);
@@ -670,6 +677,10 @@ public class WorldEffectPackets {
             }
             wrapper.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getJavaBlocks().get(BedrockProtocol.MAPPINGS.getJavaBlockStates().inverse().get(blockStateRewriter.javaId(blockState)).namespacedIdentifier())); // block
         });
+    }
+
+    public static boolean advancesJavaTimeToDawn(final LevelEvent levelEvent) {
+        return levelEvent == LevelEvent.AllPlayersSleeping;
     }
 
     public static BlockPosition levelEventBlockPosition(final Position3f position) {
