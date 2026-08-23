@@ -721,8 +721,11 @@ public class ClientPlayerPackets {
             }
 
             final ClientPlayerEntity.BlockBreakingInfo blockBreakingInfo = clientPlayer.blockBreakingInfo();
+            final BlockPlacementPredictionTracker predictionTracker = wrapper.user().get(BlockPlacementPredictionTracker.class);
             final SwingHandling swingHandling = swingHandling(
-                blockBreakingInfo != null, gameSession.isBlockBreakingServerAuthoritative()
+                blockBreakingInfo != null,
+                predictionTracker != null && predictionTracker.hasPendingBreaking(),
+                gameSession.isBlockBreakingServerAuthoritative()
             );
             if (swingHandling.forwardAnimation()) {
                 wrapper.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
@@ -746,8 +749,9 @@ public class ClientPlayerPackets {
     }
 
     public static SwingHandling swingHandling(final boolean blockBreaking,
+                                               final boolean pendingBreaking,
                                                final boolean serverAuthoritativeBreaking) {
-        return blockBreaking
+        return blockBreaking || pendingBreaking
             ? new SwingHandling(false, !serverAuthoritativeBreaking, false)
             : new SwingHandling(true, false, true);
     }

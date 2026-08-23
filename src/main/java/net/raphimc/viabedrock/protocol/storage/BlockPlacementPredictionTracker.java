@@ -114,6 +114,20 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         return false;
     }
 
+    /**
+     * Returns whether Java has completed a local break which Bedrock has not confirmed yet.
+     * Swing packets can continue briefly after Java sends STOP_DESTROY_BLOCK; treating those
+     * packets as missed attacks makes client-hosted worlds echo attack.nodamage sounds.
+     */
+    public boolean hasPendingBreaking() {
+        for (PendingPlacement pending : this.pendingPlacements) {
+            if (!pending.resolved && pending.kind == PredictionKind.BREAKING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean shouldSuppressBreakingReassertion(final BlockPosition position, final boolean authoritativeAir) {
         return !authoritativeAir && this.isPendingBreaking(position);
     }
