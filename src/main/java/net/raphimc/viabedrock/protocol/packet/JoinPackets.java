@@ -306,10 +306,7 @@ public class JoinPackets {
                             wrapper.read(BedrockTypes.STRING); // store id
                             wrapper.read(BedrockTypes.STRING); // store name
                         }
-                        if (wrapper.read(Types.BOOLEAN)) { // has presence info
-                            wrapper.read(BedrockTypes.STRING); // experience name
-                            wrapper.read(BedrockTypes.STRING); // world name
-                        }
+                        readServerConfigurationPresence(wrapper);
                     }
                     wrapper.read(BedrockTypes.STRING); // server id
                     wrapper.read(BedrockTypes.STRING); // scenario id
@@ -621,6 +618,21 @@ public class JoinPackets {
         final PacketWrapper setTime = PacketWrapper.create(ClientboundBedrockPackets.SET_TIME, user);
         setTime.write(BedrockTypes.VAR_INT, joinGameStorage.currentTime()); // time of day
         setTime.send(BedrockProtocol.class, false);
+    }
+
+    /**
+     * Reads the optional {@code ServerConfiguration::PresenceConfiguration} that ends the
+     * Server Configuration Join Info in protocol 2168/2169 StartGame payloads. That structure
+     * holds only a single optional rich-presence id: {@code presence { hasRichPresenceId,
+     * richPresenceId? }}. Some 1.26.40+ hosts send it, so it must not be over-read.
+     */
+    static void readServerConfigurationPresence(final PacketWrapper wrapper) {
+        if (!wrapper.read(Types.BOOLEAN)) { // no presence info
+            return;
+        }
+        if (wrapper.read(Types.BOOLEAN)) { // has rich presence id
+            wrapper.read(BedrockTypes.STRING); // rich presence id
+        }
     }
 
 }
