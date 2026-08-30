@@ -22,6 +22,7 @@ import com.viaversion.viaversion.libs.gson.JsonElement;
 import com.viaversion.viaversion.libs.gson.JsonObject;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.resourcepack.content.Content;
+import net.raphimc.viabedrock.api.resourcepack.content.InMemoryContent;
 import net.raphimc.viabedrock.api.resourcepack.content.ZipContent;
 
 import javax.crypto.Cipher;
@@ -52,17 +53,33 @@ public class ResourcePack {
 
     public ResourcePack(Content content) {
         try {
-            if (!content.contains("manifest.json") && !content.contains("pack_manifest.json")) {
+            String manifestPath = this.findManifestPath(content);
+            if (manifestPath == null) {
                 // CDN packs are allowed to contain a single .zip file at the root
                 final List<String> files = content.getFilesDeep("", "");
                 if (files.size() == 1 && files.get(0).endsWith(".zip")) {
                     content = new ZipContent(content.get(files.get(0)));
+                    manifestPath = this.findManifestPath(content);
                 }
             }
-            if (!content.contains("manifest.json") && !content.contains("pack_manifest.json")) {
+            if (manifestPath == null) {
+                // Some servers package their packs with the files nested under a subdirectory.
+                // Rebase the pack so the directory holding the manifest sits at the root, which
+                // lets the rest of the pipeline read it at its canonical paths.
+                final String nestedManifest = content.getFilesDeep("", "json").stream()
+                        .filter(path -> path.endsWith("manifest.json") || path.endsWith("pack_manifest.json"))
+                        .sorted()
+                        .findFirst()
+                        .orElse(null);
+                if (nestedManifest != null) {
+                    content = rebaseToPackRoot(content, nestedManifest);
+                    manifestPath = this.findManifestPath(content);
+                }
+            }
+            if (manifestPath == null) {
                 throw new IllegalStateException("Missing manifest.json");
             }
-            final JsonObject manifestJson = content.contains("manifest.json") ? content.getJson("manifest.json") : content.getJson("pack_manifest.json");
+            final JsonObject manifestJson = content.getJson(manifestPath);
             final int formatVersion = manifestJson.get("format_version").getAsInt();
             if (formatVersion < 1 || formatVersion > 3) {
                 throw new IllegalStateException("Unsupported format version: " + formatVersion);
@@ -92,6 +109,29 @@ public class ResourcePack {
         } catch (Throwable e) {
             throw new RuntimeException("Failed to parse resource pack", e);
         }
+    }
+
+    private static String findManifestPath(final Content content) {
+        if (content.contains("manifest.json")) {
+            return "manifest.json";
+        }
+        if (content.contains("pack_manifest.json")) {
+            return "pack_manifest.json";
+        }
+        return null;
+    }
+
+    private static Content rebaseToPackRoot(final Content content, final String manifestPath) {
+        final int separator = manifestPath.lastIndexOf('/');
+        if (separator < 0) {
+            return content;
+        }
+        final String directory = manifestPath.substring(0, separator + 1);
+        final Content rebased = new InMemoryContent();
+        for (String path : content.getFilesDeep("", "")) {
+            rebased.put(path.startsWith(directory) ? path.substring(directory.length()) : path, content.get(path));
+        }
+        return rebased;
     }
 
     public void decryptContent(final byte[] contentKey, final String expectedContentId) {
