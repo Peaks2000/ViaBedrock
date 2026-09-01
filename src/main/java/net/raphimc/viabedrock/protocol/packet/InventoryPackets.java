@@ -18,6 +18,7 @@
 package net.raphimc.viabedrock.protocol.packet;
 
 import com.viaversion.nbt.tag.CompoundTag;
+import com.viaversion.nbt.tag.IntTag;
 import com.viaversion.nbt.tag.ListTag;
 import com.viaversion.nbt.tag.StringTag;
 import com.viaversion.nbt.tag.Tag;
@@ -81,6 +82,7 @@ import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.EquipmentSlot;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.GameMode;
+import net.raphimc.viabedrock.protocol.data.generated.bedrock.CustomBlockTags;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.BedrockTradeOffer;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
@@ -143,7 +145,8 @@ public class InventoryPackets {
                     wrapper.cancel();
                     return;
                 }
-                case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position, 27, blockTag);
+                case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position,
+                    blockContainerSize(blockTag, blockEntity), blockTag);
                 case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"));
                 case FURNACE, BLAST_FURNACE, SMOKER -> container = new FurnaceContainer(wrapper.user(), containerId, type, title, position);
                 case TRADE -> container = new MerchantContainer(wrapper.user(), containerId,
@@ -163,7 +166,10 @@ public class InventoryPackets {
             inventoryTracker.setCurrentContainer(container);
 
             wrapper.write(Types.VAR_INT, (int) containerId); // container id
-            wrapper.write(Types.VAR_INT, BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(type)); // type
+            final int javaMenu = container instanceof ChestContainer && container.size() == 54
+                ? BedrockProtocol.MAPPINGS.getJavaMenu("minecraft:generic_9x6")
+                : BedrockProtocol.MAPPINGS.getBedrockToJavaContainers().get(type);
+            wrapper.write(Types.VAR_INT, javaMenu); // type
             wrapper.write(Types.TAG, TextUtil.textComponentToNbt(container.title())); // title
         });
         protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_TRADE, ClientboundPackets26_1.MERCHANT_OFFERS, wrapper -> {
@@ -884,6 +890,16 @@ public class InventoryPackets {
             wrapper.write(Types.UNSIGNED_BYTE, (short) 9); // number of empty hotbar slots (vanilla client always sends 9)
             wrapper.write(Types.BOOLEAN, includeData); // include data
         });
+    }
+
+    public static int blockContainerSize(final String blockTag, final BedrockBlockEntity blockEntity) {
+        if ((CustomBlockTags.CHEST.equals(blockTag) || CustomBlockTags.TRAPPED_CHEST.equals(blockTag))
+            && blockEntity != null
+            && blockEntity.tag().get("pairx") instanceof IntTag
+            && blockEntity.tag().get("pairz") instanceof IntTag) {
+            return 54;
+        }
+        return 27;
     }
 
     private static void addTextToDialog(final UserConnection userConnection, final Dialog dialog, final String text) {

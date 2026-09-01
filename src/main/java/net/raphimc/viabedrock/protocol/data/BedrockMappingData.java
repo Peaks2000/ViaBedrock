@@ -115,6 +115,7 @@ public class BedrockMappingData extends MappingDataBase {
     private Map<String, String> bedrockCustomItemTags;
     private Map<String, Map<BlockState, JavaItemMapping>> bedrockToJavaBlockItems;
     private Map<String, Map<Integer, JavaItemMapping>> bedrockToJavaMetaItems;
+    private Map<String, Integer> javaMenus;
     private Map<ContainerType, Integer> bedrockToJavaContainers;
 
     // Entities
@@ -559,9 +560,9 @@ public class BedrockMappingData extends MappingDataBase {
             }
 
             final JsonArray javaMenusJson = javaViaMappingJson.get("menus").getAsJsonArray();
-            final List<String> javaMenus = new ArrayList<>(javaMenusJson.size());
-            for (JsonElement menuJson : javaMenusJson) {
-                javaMenus.add(Key.namespaced(menuJson.getAsString()));
+            this.javaMenus = new HashMap<>(javaMenusJson.size());
+            for (int i = 0; i < javaMenusJson.size(); i++) {
+                this.javaMenus.put(Key.namespaced(javaMenusJson.get(i).getAsString()), i);
             }
 
             final JsonObject bedrockToJavaContainersJson = this.readJson("custom/container_mappings.json");
@@ -574,8 +575,8 @@ public class BedrockMappingData extends MappingDataBase {
                     continue;
                 }
                 final String javaIdentifier = entry.getValue().getAsString();
-                final int javaId = javaMenus.indexOf(javaIdentifier);
-                if (javaId == -1) {
+                final Integer javaId = this.javaMenus.get(javaIdentifier);
+                if (javaId == null) {
                     throw new IllegalStateException("Unknown java menu: " + javaIdentifier);
                 }
                 this.bedrockToJavaContainers.put(bedrockContainerType, javaId);
@@ -1154,6 +1155,14 @@ public class BedrockMappingData extends MappingDataBase {
 
     public Map<ContainerType, Integer> getBedrockToJavaContainers() {
         return this.bedrockToJavaContainers;
+    }
+
+    public int getJavaMenu(final String identifier) {
+        final Integer id = this.javaMenus.get(Key.namespaced(identifier));
+        if (id == null) {
+            throw new IllegalArgumentException("Unknown java menu: " + identifier);
+        }
+        return id;
     }
 
     public BiMap<String, Integer> getBedrockEntities() {
