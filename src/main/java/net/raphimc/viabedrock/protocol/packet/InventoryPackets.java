@@ -61,6 +61,7 @@ import net.lenni0451.mcstructs_bedrock.forms.types.ModalForm;
 import net.lenni0451.mcstructs_bedrock.text.utils.BedrockTextUtils;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
+import net.raphimc.viabedrock.api.model.container.AnvilContainer;
 import net.raphimc.viabedrock.api.model.container.ChestContainer;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.api.model.container.CraftingTableContainer;
@@ -148,6 +149,7 @@ public class InventoryPackets {
                 case CONTAINER -> container = new ChestContainer(wrapper.user(), containerId, title, position,
                     blockContainerSize(blockTag, blockEntity), blockTag);
                 case WORKBENCH -> container = new CraftingTableContainer(wrapper.user(), containerId, new TranslationComponent("container.crafting"));
+                case ANVIL -> container = new AnvilContainer(wrapper.user(), containerId, title, position);
                 case FURNACE, BLAST_FURNACE, SMOKER -> container = new FurnaceContainer(wrapper.user(), containerId, type, title, position);
                 case TRADE -> container = new MerchantContainer(wrapper.user(), containerId,
                     new TranslationComponent(entityUniqueId == -1L ? "entity.minecraft.wandering_trader" : "entity.minecraft.villager"));
