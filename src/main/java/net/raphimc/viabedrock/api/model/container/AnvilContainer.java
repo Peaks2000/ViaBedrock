@@ -33,4 +33,24 @@ public final class AnvilContainer extends Container {
         };
         return new FullContainerName(name, null);
     }
+
+    @Override
+    public int stackRequestSlot(final int slot) {
+        return switch (slot) {
+            case 0 -> 1;
+            case 1 -> 2;
+            case 2 -> 50;
+            default -> slot;
+        };
+    }
+
+    @Override
+    public int stackResponseSlot(final int slot) {
+        return switch (slot) {
+            case 1 -> 0;
+            case 2 -> 1;
+            case 50 -> 2;
+            default -> slot;
+        };
+    }
 }
