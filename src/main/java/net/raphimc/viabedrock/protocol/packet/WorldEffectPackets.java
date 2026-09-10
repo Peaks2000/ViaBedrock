@@ -571,6 +571,9 @@ public class WorldEffectPackets {
                     if (data.getInt("ableToSleep") != 0) {
                         final int playerCount = data.getInt("overworldPlayerCount");
                         final int sleepingPlayerCount = data.getInt("sleepingPlayerCount");
+                        if (allPlayersSleeping(playerCount, sleepingPlayerCount)) {
+                            PacketFactory.sendJavaTime(wrapper.user(), 0L);
+                        }
                         if (sleepingPlayerCount < playerCount) {
                             wrapper.write(Types.TAG, TextUtil.stringToNbt(textDefinitions.translate("multiplayer.playersSleeping", sleepingPlayerCount, playerCount))); // message
                         } else {
@@ -681,6 +684,10 @@ public class WorldEffectPackets {
 
     public static boolean advancesJavaTimeToDawn(final LevelEvent levelEvent) {
         return levelEvent == LevelEvent.AllPlayersSleeping;
+    }
+
+    public static boolean allPlayersSleeping(final int playerCount, final int sleepingPlayerCount) {
+        return playerCount > 0 && sleepingPlayerCount >= playerCount;
     }
 
     public static BlockPosition levelEventBlockPosition(final Position3f position) {

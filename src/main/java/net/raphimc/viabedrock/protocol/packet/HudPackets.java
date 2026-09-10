@@ -63,8 +63,35 @@ public class HudPackets {
         protocol.registerClientbound(ClientboundBedrockPackets.PLAYER_LIST, ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper -> {
             wrapper.cancel();
             try {
-                final int capturedSkins = captureInitialSkins(wrapper, (uuid, skin) ->
-                        Via.getManager().getProviders().get(SkinProvider.class).setSkin(wrapper.user(), uuid, skin));
+                final PlayerListStorage playerListStorage = wrapper.user().get(PlayerListStorage.class);
+                final ScoreboardTracker scoreboardTracker = wrapper.user().get(ScoreboardTracker.class);
+                final int capturedSkins = translatePlayerList(wrapper, (uuid, skin) ->
+                    Via.getManager().getProviders().get(SkinProvider.class).setSkin(wrapper.user(), uuid, skin), entry -> {
+                        if (entry.add()) {
+                            final PacketWrapper update = PacketWrapper.create(ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper.user());
+                            update.write(Types.PROFILE_ACTIONS_ENUM1_21_4, BitSets.create(8, PlayerInfoUpdateAction.ADD_PLAYER,
+                                PlayerInfoUpdateAction.UPDATE_LISTED, PlayerInfoUpdateAction.UPDATE_DISPLAY_NAME));
+                            update.write(Types.VAR_INT, 1);
+                            update.write(Types.UUID, entry.uuid());
+                            update.write(Types.STRING, StringUtil.encodeUUID(entry.uuid()));
+                            update.write(Types.PROFILE_PROPERTY_ARRAY, new GameProfile.Property[0]);
+                            update.write(Types.BOOLEAN, true);
+                            update.write(Types.OPTIONAL_TAG, TextUtil.stringToNbt(entry.name()));
+                            update.send(BedrockProtocol.class);
+                            playerListStorage.addPlayer(entry.uuid(), entry.entityUniqueId(), entry.name());
+                            final Pair<ScoreboardObjective, ScoreboardEntry> score = scoreboardTracker.getEntryForPlayer(entry.entityUniqueId());
+                            if (score != null) score.key().updateEntry(wrapper.user(), score.value());
+                        } else {
+                            final Pair<Long, String> removed = playerListStorage.removePlayer(entry.uuid());
+                            final PacketWrapper remove = PacketWrapper.create(ClientboundPackets26_1.PLAYER_INFO_REMOVE, wrapper.user());
+                            remove.write(Types.UUID_ARRAY, new UUID[]{entry.uuid()});
+                            remove.send(BedrockProtocol.class);
+                            if (removed != null) {
+                                final Pair<ScoreboardObjective, ScoreboardEntry> score = scoreboardTracker.getEntryForPlayer(removed.key());
+                                if (score != null) score.key().updateEntry(wrapper.user(), score.value());
+                            }
+                        }
+                    });
                 if (capturedSkins > 0) {
                     ViaBedrock.getPlatform().getLogger().log(Level.INFO,
                             "Captured " + capturedSkins + " initial Bedrock player skin(s) locally");
@@ -259,7 +286,7 @@ public class HudPackets {
                 final PacketWrapper scoreboardObjective = PacketWrapper.create(ClientboundPackets26_1.SET_OBJECTIVE, wrapper.user());
                 scoreboardObjective.write(Types.STRING, objectiveName); // objective name
                 scoreboardObjective.write(Types.BYTE, (byte) ObjectiveAction.ADD.ordinal()); // mode
-                scoreboardObjective.write(Types.TAG, TextUtil.stringToNbt(wrapper.user().get(ResourcePackStorage.class).getTexts().translate(displayName))); // display name
+                scoreboardObjective.write(Types.TAG, TextUtil.stringToNbt(brandScoreboardText(wrapper.user().get(ResourcePackStorage.class).getTexts().translate(displayName)))); // display name
                 scoreboardObjective.write(Types.VAR_INT, ObjectiveCriteriaRenderType.INTEGER.ordinal()); // display mode
                 scoreboardObjective.write(Types.BOOLEAN, false); // has number format
                 scoreboardObjective.send(BedrockProtocol.class);
@@ -308,7 +335,7 @@ public class HudPackets {
                         objectiveName = wrapper.read(BedrockTypes.STRING);
                         final int score = wrapper.read(BedrockTypes.INT_LE); // score
                         final String name = wrapper.read(BedrockTypes.STRING); // Fake Player Name
-                        entry = new ScoreboardEntry(score, IdentityDefinition_Type.FakePlayer, null, "");
+                        entry = new ScoreboardEntry(score, IdentityDefinition_Type.FakePlayer, null, brandScoreboardText(name));
                     }
                     default -> throw new IllegalStateException("Unhandled ScorePacketEntryAction: " + action);
                 }
@@ -485,6 +512,11 @@ public class HudPackets {
      */
     static int captureInitialSkins(final PacketWrapper wrapper,
                                    final BiConsumer<UUID, SkinData> skinConsumer) throws InformativeException {
+        return translatePlayerList(wrapper, skinConsumer, entry -> { });
+    }
+
+    static int translatePlayerList(final PacketWrapper wrapper, final BiConsumer<UUID, SkinData> skinConsumer,
+                                   final java.util.function.Consumer<PlayerListEntry> entryConsumer) throws InformativeException {
         final int length = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT);
         if (length < 0 || length > MAX_PLAYER_LIST_ENTRIES) {
             throw new IllegalArgumentException("Invalid player-list length: " + Integer.toUnsignedString(length));
@@ -500,11 +532,12 @@ public class HudPackets {
 
             final UUID uuid = wrapper.read(BedrockTypes.UUID);
             if (action == PlayerListPacketType.Remove) {
+                entryConsumer.accept(new PlayerListEntry(false, uuid, 0L, ""));
                 continue;
             }
 
-            wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
-            wrapper.read(BedrockTypes.STRING); // username
+            final long entityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
+            final String name = wrapper.read(BedrockTypes.STRING); // username
             wrapper.read(BedrockTypes.STRING); // xuid
             wrapper.read(BedrockTypes.STRING); // platform chat id
             wrapper.read(BedrockTypes.INT_LE); // device OS
@@ -518,8 +551,17 @@ public class HudPackets {
                 skinConsumer.accept(uuid, skin);
                 capturedSkins++;
             }
+            entryConsumer.accept(new PlayerListEntry(true, uuid, entityUniqueId, name));
         }
         return capturedSkins;
+    }
+
+    public static String brandScoreboardText(final String text) {
+        return text.replace("https://github.com/ViaVersion/ViaFabricPlus", "https://github.com/Peaks2000/ViaFabricPlusPeaks")
+            .replaceAll("ViaFabricPlus(?!Peaks)", "ViaFabricPlusPeaks");
+    }
+
+    record PlayerListEntry(boolean add, UUID uuid, long entityUniqueId, String name) {
     }
 
 }
