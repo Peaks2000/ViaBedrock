@@ -109,4 +109,5 @@ public final class MovementPredictionTracker {
     private record Snapshot(Position3f position, boolean onGround, boolean horizontalCollision,
                             boolean continuousVerticalMovement, boolean correctedX, boolean correctedZ) {
     }
+
 }

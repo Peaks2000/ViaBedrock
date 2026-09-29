@@ -36,7 +36,7 @@ public interface ViaBedrockPlatform {
     }
 
     default void init(final net.raphimc.viabedrock.platform.ViaBedrockConfig config) {
-        this.init(config, BedrockProtocolVersion.bedrockLatest, new BedrockProtocol());
+        this.init(config, BedrockProtocolVersion.BEDROCK_LATEST, new BedrockProtocol());
     }
 
     /**

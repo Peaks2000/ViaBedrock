@@ -108,4 +108,5 @@ public final class InventoryRequestTracker extends StoredObject {
             javaCursorOnFailure = javaCursorOnFailure != null ? javaCursorOnFailure.copy() : null;
         }
     }
+
 }

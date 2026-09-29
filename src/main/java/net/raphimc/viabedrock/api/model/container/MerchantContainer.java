@@ -15,7 +15,7 @@ import com.viaversion.viaversion.api.minecraft.item.StructuredItem;
 import com.viaversion.viaversion.libs.mcstructs.text.TextComponent;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.ContainerInput;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
@@ -44,7 +44,9 @@ public final class MerchantContainer extends Container {
 
     public void setOffers(final List<BedrockTradeOffer> offers) {
         this.offers = List.copyOf(offers);
-        if (this.selectedOffer >= this.offers.size()) this.selectedOffer = -1;
+        if (this.selectedOffer >= this.offers.size()) {
+            this.selectedOffer = -1;
+        }
     }
 
     public List<BedrockTradeOffer> offers() {
@@ -52,17 +54,27 @@ public final class MerchantContainer extends Container {
     }
 
     public static boolean matchesCost(final BedrockItem item, final BedrockItem cost) {
-        if (cost == null || cost.isEmpty()) return true;
-        if (item == null || item.isEmpty() || item.identifier() != cost.identifier()) return false;
-        if (!cost.hasWildcardData()) return !item.isDifferent(cost);
+        if (cost == null || cost.isEmpty()) {
+            return true;
+        }
+        if (item == null || item.isEmpty() || item.identifier() != cost.identifier()) {
+            return false;
+        }
+        if (!cost.hasWildcardData()) {
+            return !item.isDifferent(cost);
+        }
         return (cost.blockRuntimeId() == 0 || item.blockRuntimeId() == cost.blockRuntimeId())
             && Objects.equals(item.tag(), cost.tag());
     }
 
     public void selectTrade(final int index) {
-        if (index < 0 || index >= this.offers.size()) return;
+        if (index < 0 || index >= this.offers.size()) {
+            return;
+        }
         final BedrockTradeOffer offer = this.offers.get(index);
-        if (offer.outOfStock() || offer.costA().isEmpty() || offer.result().isEmpty()) return;
+        if (offer.outOfStock() || offer.costA().isEmpty() || offer.result().isEmpty()) {
+            return;
+        }
 
         final InventoryTracker tracker = this.user.get(InventoryTracker.class);
         final InventoryContainer inventory = tracker.getInventoryContainer();
@@ -96,12 +108,20 @@ public final class MerchantContainer extends Container {
 
     @Override
     public boolean handleClick(final int revision, final short slot, final byte button, final ContainerInput action) {
-        if (slot != 2) return super.handleClick(revision, slot, button, action);
-        if ((action != ContainerInput.PICKUP || button != 0) && action != ContainerInput.QUICK_MOVE) return false;
-        if (this.selectedOffer < 0 || this.selectedOffer >= this.offers.size()) return false;
+        if (slot != 2) {
+            return super.handleClick(revision, slot, button, action);
+        }
+        if ((action != ContainerInput.PICKUP || button != 0) && action != ContainerInput.QUICK_MOVE) {
+            return false;
+        }
+        if (this.selectedOffer < 0 || this.selectedOffer >= this.offers.size()) {
+            return false;
+        }
 
         final BedrockTradeOffer offer = this.offers.get(this.selectedOffer);
-        if (offer.outOfStock() || !this.hasPayment(0, offer.costA()) || !this.hasPayment(1, offer.costB())) return false;
+        if (offer.outOfStock() || !this.hasPayment(0, offer.costA()) || !this.hasPayment(1, offer.costB())) {
+            return false;
+        }
 
         final InventoryTracker tracker = this.user.get(InventoryTracker.class);
         final InventoryContainer inventory = tracker.getInventoryContainer();
@@ -121,7 +141,9 @@ public final class MerchantContainer extends Container {
             }
 
             if (action == ContainerInput.QUICK_MOVE) {
-                if (!this.takeResultToInventory(actions, inventory, offer.result(), requestId)) return List.of();
+                if (!this.takeResultToInventory(actions, inventory, offer.result(), requestId)) {
+                    return List.of();
+                }
             } else {
                 final BedrockItem carried = cursor.getItem(0);
                 if (!carried.isEmpty() && (carried.isDifferent(offer.result())
@@ -138,14 +160,22 @@ public final class MerchantContainer extends Container {
             }
 
             this.consumePayment(0, offer.costA().amount(), requestId);
-            if (!offer.costB().isEmpty()) this.consumePayment(1, offer.costB().amount(), requestId);
+            if (!offer.costB().isEmpty()) {
+                this.consumePayment(1, offer.costB().amount(), requestId);
+            }
             this.setPredictedItem(2, BedrockItem.empty());
             return actions;
         }, snapshots);
         if (!sent) {
-            if (snapshots.containsKey(this)) this.setItems(snapshots.get(this));
-            if (snapshots.containsKey(inventory)) inventory.setItems(snapshots.get(inventory));
-            if (snapshots.containsKey(cursor)) cursor.setItems(snapshots.get(cursor));
+            if (snapshots.containsKey(this)) {
+                this.setItems(snapshots.get(this));
+            }
+            if (snapshots.containsKey(inventory)) {
+                inventory.setItems(snapshots.get(inventory));
+            }
+            if (snapshots.containsKey(cursor)) {
+                cursor.setItems(snapshots.get(cursor));
+            }
         }
         return sent;
     }
@@ -153,13 +183,19 @@ public final class MerchantContainer extends Container {
     private boolean returnPayment(final List<InventoryStackRequest.Action> actions, final InventoryContainer inventory,
                                   final int paymentSlot, final int requestId) {
         BedrockItem payment = this.getItem(paymentSlot);
-        if (payment.isEmpty()) return true;
+        if (payment.isEmpty()) {
+            return true;
+        }
         for (int pass = 0; pass < 2 && !payment.isEmpty(); pass++) {
             for (int slot = 0; slot < inventory.size() && !payment.isEmpty(); slot++) {
                 final BedrockItem target = inventory.getItem(slot);
                 if (pass == 0 && (target.isEmpty() || target.isDifferent(payment)
-                    || target.amount() >= this.user.get(ItemRewriter.class).maxStackSize(payment))) continue;
-                if (pass == 1 && !target.isEmpty()) continue;
+                    || target.amount() >= this.user.get(ItemRewriter.class).maxStackSize(payment))) {
+                    continue;
+                }
+                if (pass == 1 && !target.isEmpty()) {
+                    continue;
+                }
                 final int count = Math.min(payment.amount(), target.isEmpty()
                     ? this.user.get(ItemRewriter.class).maxStackSize(payment)
                     : this.user.get(ItemRewriter.class).maxStackSize(payment) - target.amount());
@@ -186,10 +222,14 @@ public final class MerchantContainer extends Container {
         int remaining = cost.amount();
         for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
             final BedrockItem source = inventory.getItem(slot);
-            if (!matchesCost(source, cost)) continue;
+            if (!matchesCost(source, cost)) {
+                continue;
+            }
             final int count = Math.min(remaining, source.amount());
             final BedrockItem target = this.getItem(paymentSlot);
-            if (!target.isEmpty() && target.isDifferent(source)) continue;
+            if (!target.isEmpty() && target.isDifferent(source)) {
+                continue;
+            }
             actions.add(new InventoryStackRequest.Place(
                 count, this.requestSlot(inventory, slot, source), this.requestSlot(this, paymentSlot, target)
             ));
@@ -211,8 +251,12 @@ public final class MerchantContainer extends Container {
             for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
                 final BedrockItem target = inventory.getItem(slot);
                 if (pass == 0 && (target.isEmpty() || target.isDifferent(result)
-                    || target.amount() >= this.user.get(ItemRewriter.class).maxStackSize(result))) continue;
-                if (pass == 1 && !target.isEmpty()) continue;
+                    || target.amount() >= this.user.get(ItemRewriter.class).maxStackSize(result))) {
+                    continue;
+                }
+                if (pass == 1 && !target.isEmpty()) {
+                    continue;
+                }
                 final int count = Math.min(remaining, target.isEmpty()
                     ? this.user.get(ItemRewriter.class).maxStackSize(result)
                     : this.user.get(ItemRewriter.class).maxStackSize(result) - target.amount());
@@ -238,7 +282,9 @@ public final class MerchantContainer extends Container {
     }
 
     private BedrockItem withRemovedAmount(final BedrockItem item, final int amount, final int requestId) {
-        if (amount >= item.amount()) return BedrockItem.empty();
+        if (amount >= item.amount()) {
+            return BedrockItem.empty();
+        }
         final BedrockItem remaining = item.copy();
         remaining.setAmount(item.amount() - amount);
         remaining.setNetId(requestId);
@@ -272,11 +318,11 @@ public final class MerchantContainer extends Container {
     @Override
     public FullContainerName getFullContainerName(final int slot) {
         return new FullContainerName(switch (slot) {
-            case 0, 4 -> ContainerEnumName.Trade2Ingredient1Container;
-            case 1, 5 -> ContainerEnumName.Trade2Ingredient2Container;
-            case 2, 50 -> ContainerEnumName.Trade2ResultPreviewContainer;
-            default -> ContainerEnumName.LevelEntityContainer;
-        }, null);
+                case 0, 4 -> ContainerEnumName.Trade2Ingredient1Container;
+                case 1, 5 -> ContainerEnumName.Trade2Ingredient2Container;
+                case 2, 50 -> ContainerEnumName.Trade2ResultPreviewContainer;
+                default -> ContainerEnumName.LevelEntityContainer;
+            }, null);
     }
 
     @Override
@@ -298,4 +344,5 @@ public final class MerchantContainer extends Container {
             default -> slot;
         };
     }
+
 }

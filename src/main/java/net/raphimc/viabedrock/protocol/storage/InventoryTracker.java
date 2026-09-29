@@ -31,15 +31,15 @@ import net.raphimc.viabedrock.api.model.container.player.HudContainer;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.container.player.OffhandContainer;
 import net.raphimc.viabedrock.api.util.PacketFactory;
-import net.raphimc.viabedrock.experimental.model.inventory.BedrockInventoryTransaction;
-import net.raphimc.viabedrock.experimental.model.inventory.InventoryTransactionData;
-import net.raphimc.viabedrock.experimental.rewriter.InventoryTransactionRewriter;
+import net.raphimc.viabedrock.protocol.model.inventory.BedrockInventoryTransaction;
+import net.raphimc.viabedrock.protocol.model.inventory.InventoryTransactionData;
+import net.raphimc.viabedrock.protocol.rewriter.InventoryTransactionRewriter;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ComplexInventoryTransaction_Type;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ModalFormCancelReason;
 import net.raphimc.viabedrock.protocol.data.generated.bedrock.CustomItemTags;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
@@ -81,10 +81,18 @@ public class InventoryTracker extends StoredObject {
     }
 
     public Container getContainerClientbound(final byte containerId, final FullContainerName containerName, final BedrockItem storageItem) {
-        if (containerId == this.inventoryContainer.containerId()) return this.inventoryContainer;
-        if (containerId == this.offhandContainer.containerId()) return this.offhandContainer;
-        if (containerId == this.armorContainer.containerId()) return this.armorContainer;
-        if (containerId == this.hudContainer.containerId()) return this.hudContainer;
+        if (containerId == this.inventoryContainer.containerId()) {
+            return this.inventoryContainer;
+        }
+        if (containerId == this.offhandContainer.containerId()) {
+            return this.offhandContainer;
+        }
+        if (containerId == this.armorContainer.containerId()) {
+            return this.armorContainer;
+        }
+        if (containerId == this.hudContainer.containerId()) {
+            return this.hudContainer;
+        }
         if (containerId == ContainerID.CONTAINER_ID_REGISTRY.getValue() && containerName.name() == ContainerEnumName.DynamicContainer) {
             final String itemTag = BedrockProtocol.MAPPINGS.getBedrockCustomItemTags().get(this.user().get(ItemRewriter.class).getItems().inverse().get(storageItem.identifier()));
             if (!storageItem.isEmpty() && CustomItemTags.BUNDLE.equals(itemTag)) {
@@ -107,7 +115,9 @@ public class InventoryTracker extends StoredObject {
     }
 
     public Container getContainerFromName(final FullContainerName containerName, final int slot) {
-        if (containerName == null || containerName.name() == null) return null;
+        if (containerName == null || containerName.name() == null) {
+            return null;
+        }
         return switch (containerName.name()) {
             case InventoryContainer, HotbarContainer, CombinedHotbarAndInventoryContainer -> this.inventoryContainer;
             case OffhandContainer -> this.offhandContainer;
@@ -175,7 +185,9 @@ public class InventoryTracker extends StoredObject {
         }
 
         if (this.currentContainer != null && this.currentContainer.position() != null) {
-            if (this.currentContainer.type() == ContainerType.INVENTORY) return;
+            if (this.currentContainer.type() == ContainerType.INVENTORY) {
+                return;
+            }
 
             final ChunkTracker chunkTracker = this.user().get(ChunkTracker.class);
             final BlockStateRewriter blockStateRewriter = this.user().get(BlockStateRewriter.class);
@@ -237,7 +249,9 @@ public class InventoryTracker extends StoredObject {
             this.user().get(InventoryRequestTracker.class).executeWhenIdle(() -> this.executeOffhandSwap(inventory));
             return;
         }
-        if (this.currentContainer != null) return;
+        if (this.currentContainer != null) {
+            return;
+        }
 
         this.offhandSwapPending = true;
         this.offhandSwapOpenTicks = OFFHAND_SWAP_OPEN_TIMEOUT_TICKS;
@@ -245,7 +259,9 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void onInventoryContainerOpened(final InventoryContainer inventory) {
-        if (!this.offhandSwapPending) return;
+        if (!this.offhandSwapPending) {
+            return;
+        }
 
         this.offhandSwapPending = false;
         this.offhandSwapOpenTicks = 0;
@@ -265,17 +281,23 @@ public class InventoryTracker extends StoredObject {
 
     private void finishOffhandSwap(final InventoryContainer inventory) {
         this.offhandSwapInProgress = false;
-        if (!this.syntheticInventoryOpen) return;
+        if (!this.syntheticInventoryOpen) {
+            return;
+        }
 
         this.syntheticInventoryOpen = false;
-        if (this.currentContainer != inventory) return;
+        if (this.currentContainer != inventory) {
+            return;
+        }
         this.markPendingClose(inventory);
         PacketFactory.sendBedrockContainerClose(this.user(), inventory.containerId(), ContainerType.NONE);
     }
 
     private void requestPlayerInventoryResync() {
         final InventoryTransactionRewriter transactionRewriter = this.user().get(InventoryTransactionRewriter.class);
-        if (transactionRewriter == null) return;
+        if (transactionRewriter == null) {
+            return;
+        }
 
         // InventoryMismatch is Bedrock's client-to-server request for a full authoritative
         // inventory resend. It has no actions or type-specific payload.

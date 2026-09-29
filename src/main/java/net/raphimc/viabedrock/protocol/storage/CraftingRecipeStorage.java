@@ -50,10 +50,14 @@ public final class CraftingRecipeStorage extends StoredObject {
 
     public Match find(final BedrockItem output, final BedrockItem[] gridItems, final int[] gridSlots, final int gridWidth) {
         for (Recipe recipe : this.recipes) {
-            if (!sameItem(recipe.output(), output) || recipe.output().amount() != output.amount()) continue;
+            if (!sameItem(recipe.output(), output) || recipe.output().amount() != output.amount()) {
+                continue;
+            }
 
             final Match match = this.match(recipe, gridItems, gridSlots, gridWidth);
-            if (match != null) return match;
+            if (match != null) {
+                return match;
+            }
         }
         return null;
     }
@@ -61,7 +65,9 @@ public final class CraftingRecipeStorage extends StoredObject {
     public Match find(final BedrockItem[] gridItems, final int[] gridSlots, final int gridWidth) {
         for (Recipe recipe : this.recipes) {
             final Match match = this.match(recipe, gridItems, gridSlots, gridWidth);
-            if (match != null) return match;
+            if (match != null) {
+                return match;
+            }
         }
         return null;
     }
@@ -110,7 +116,9 @@ public final class CraftingRecipeStorage extends StoredObject {
         BedrockItem output = BedrockItem.empty();
         for (int i = 0; i < outputCount; i++) {
             final BedrockItem item = wrapper.read(itemRewriter.itemType()); // NetworkItemInstanceDescriptorData
-            if (i == 0) output = item;
+            if (i == 0) {
+                output = item;
+            }
         }
         return output;
     }
@@ -159,7 +167,9 @@ public final class CraftingRecipeStorage extends StoredObject {
     }
 
     private void readOptionalRequirement(final PacketWrapper wrapper) {
-        if (!wrapper.read(Types.BOOLEAN)) return;
+        if (!wrapper.read(Types.BOOLEAN)) {
+            return;
+        }
         wrapper.read(BedrockTypes.VAR_INT); // unlocking context
         if (wrapper.read(Types.BOOLEAN)) {
             this.readIngredients(wrapper);
@@ -167,7 +177,9 @@ public final class CraftingRecipeStorage extends StoredObject {
     }
 
     private List<ConsumedSlot> matchShaped(final Recipe recipe, final BedrockItem[] gridItems, final int[] gridSlots, final int gridWidth) {
-        if (recipe.width() > gridWidth || recipe.height() > gridWidth) return null;
+        if (recipe.width() > gridWidth || recipe.height() > gridWidth) {
+            return null;
+        }
         for (boolean mirrored : recipe.assumeSymmetry() ? new boolean[]{false, true} : new boolean[]{false}) {
             for (int offsetY = 0; offsetY <= gridWidth - recipe.height(); offsetY++) {
                 for (int offsetX = 0; offsetX <= gridWidth - recipe.width(); offsetX++) {
@@ -178,7 +190,9 @@ public final class CraftingRecipeStorage extends StoredObject {
                             Ingredient ingredient = Ingredient.EMPTY;
                             if (gridX >= offsetX && gridX < offsetX + recipe.width() && gridY >= offsetY && gridY < offsetY + recipe.height()) {
                                 int recipeX = gridX - offsetX;
-                                if (mirrored) recipeX = recipe.width() - recipeX - 1;
+                                if (mirrored) {
+                                    recipeX = recipe.width() - recipeX - 1;
+                                }
                                 ingredient = recipe.ingredients().get((gridY - offsetY) * recipe.width() + recipeX);
                             }
                             final int index = gridY * gridWidth + gridX;
@@ -191,7 +205,9 @@ public final class CraftingRecipeStorage extends StoredObject {
                             }
                         }
                     }
-                    if (matches) return consumed;
+                    if (matches) {
+                        return consumed;
+                    }
                 }
             }
         }
@@ -201,14 +217,20 @@ public final class CraftingRecipeStorage extends StoredObject {
     private List<ConsumedSlot> matchShapeless(final Recipe recipe, final BedrockItem[] gridItems, final int[] gridSlots) {
         final List<Integer> occupied = new ArrayList<>();
         for (int i = 0; i < gridItems.length; i++) {
-            if (!gridItems[i].isEmpty()) occupied.add(i);
+            if (!gridItems[i].isEmpty()) {
+                occupied.add(i);
+            }
         }
         final List<Ingredient> ingredients = recipe.ingredients().stream().filter(i -> i.type() != IngredientType.EMPTY).toList();
-        if (occupied.size() != ingredients.size()) return null;
+        if (occupied.size() != ingredients.size()) {
+            return null;
+        }
 
         final int[] assignedSlots = new int[ingredients.size()];
         final boolean[] used = new boolean[occupied.size()];
-        if (!this.matchShapelessIngredient(0, ingredients, occupied, gridItems, used, assignedSlots)) return null;
+        if (!this.matchShapelessIngredient(0, ingredients, occupied, gridItems, used, assignedSlots)) {
+            return null;
+        }
 
         final List<ConsumedSlot> consumed = new ArrayList<>(ingredients.size());
         for (int i = 0; i < ingredients.size(); i++) {
@@ -219,26 +241,40 @@ public final class CraftingRecipeStorage extends StoredObject {
 
     private boolean matchShapelessIngredient(final int ingredientIndex, final List<Ingredient> ingredients, final List<Integer> occupied,
                                              final BedrockItem[] gridItems, final boolean[] used, final int[] assignedSlots) {
-        if (ingredientIndex == ingredients.size()) return true;
+        if (ingredientIndex == ingredients.size()) {
+            return true;
+        }
         for (int i = 0; i < occupied.size(); i++) {
-            if (used[i]) continue;
+            if (used[i]) {
+                continue;
+            }
             final int gridIndex = occupied.get(i);
-            if (!this.matches(ingredients.get(ingredientIndex), gridItems[gridIndex])) continue;
+            if (!this.matches(ingredients.get(ingredientIndex), gridItems[gridIndex])) {
+                continue;
+            }
             used[i] = true;
             assignedSlots[ingredientIndex] = gridIndex;
-            if (this.matchShapelessIngredient(ingredientIndex + 1, ingredients, occupied, gridItems, used, assignedSlots)) return true;
+            if (this.matchShapelessIngredient(ingredientIndex + 1, ingredients, occupied, gridItems, used, assignedSlots)) {
+                return true;
+            }
             used[i] = false;
         }
         return false;
     }
 
     private boolean matches(final Ingredient ingredient, final BedrockItem item) {
-        if (ingredient.type() == IngredientType.EMPTY) return item.isEmpty();
-        if (item.isEmpty() || item.amount() < ingredient.count()) return false;
+        if (ingredient.type() == IngredientType.EMPTY) {
+            return item.isEmpty();
+        }
+        if (item.isEmpty() || item.amount() < ingredient.count()) {
+            return false;
+        }
 
         final ItemRewriter itemRewriter = this.user().get(ItemRewriter.class);
         final String identifier = itemRewriter.getItems().inverse().get(item.identifier());
-        if (identifier == null) return false;
+        if (identifier == null) {
+            return false;
+        }
         return switch (ingredient.type()) {
             case ITEM -> ingredient.value().equals(identifier) && (ingredient.aux() == WILDCARD_AUX_VALUE || ingredient.aux() == item.data());
             case TAG -> {
@@ -273,4 +309,5 @@ public final class CraftingRecipeStorage extends StoredObject {
 
     public record Match(int networkId, BedrockItem output, List<ConsumedSlot> consumedSlots) {
     }
+
 }

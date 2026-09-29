@@ -23,8 +23,8 @@ import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.protocol.remapper.PacketHandler;
 import com.viaversion.viaversion.api.protocol.remapper.PacketHandlers;
 import com.viaversion.viaversion.api.type.Types;
-import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPackets26_1;
-import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ServerboundPackets26_1;
+import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
+import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ServerboundPackets26_3;
 import com.viaversion.viaversion.util.Pair;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
@@ -58,12 +58,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 
-public class ClientPlayerPackets {
+public final class ClientPlayerPackets {
 
     private static final PacketHandler CLIENT_PLAYER_GAME_MODE_INFO_UPDATE = wrapper -> {
         final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
 
-        final PacketWrapper playerInfoUpdate = PacketWrapper.create(ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper.user());
+        final PacketWrapper playerInfoUpdate = PacketWrapper.create(ClientboundPackets26_3.PLAYER_INFO_UPDATE, wrapper.user());
         playerInfoUpdate.write(Types.PROFILE_ACTIONS_ENUM1_21_4, BitSets.create(8, PlayerInfoUpdateAction.UPDATE_GAME_MODE)); // actions
         playerInfoUpdate.write(Types.VAR_INT, 1); // length
         playerInfoUpdate.write(Types.UUID, clientPlayer.javaUuid()); // uuid
@@ -86,7 +86,7 @@ public class ClientPlayerPackets {
     };
 
     public static void register(final BedrockProtocol protocol) {
-        protocol.registerClientbound(ClientboundBedrockPackets.RESPAWN, ClientboundPackets26_1.RESPAWN, wrapper -> {
+        protocol.registerClientbound(ClientboundBedrockPackets.RESPAWN, ClientboundPackets26_3.RESPAWN, wrapper -> {
             final Position3f position = wrapper.read(BedrockTypes.POSITION_3F); // position
             final byte rawState = wrapper.read(Types.BYTE); // state
             final PlayerRespawnState state = PlayerRespawnState.getByValue(rawState);
@@ -178,7 +178,7 @@ public class ClientPlayerPackets {
                 }
             }
         });
-        protocol.registerClientbound(ClientboundBedrockPackets.CORRECT_PLAYER_MOVE_PREDICTION, ClientboundPackets26_1.PLAYER_POSITION, wrapper -> {
+        protocol.registerClientbound(ClientboundBedrockPackets.CORRECT_PLAYER_MOVE_PREDICTION, ClientboundPackets26_3.PLAYER_POSITION, wrapper -> {
             final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
 
             final byte rawRewindType = wrapper.read(Types.BYTE); // rewind type
@@ -238,7 +238,7 @@ public class ClientPlayerPackets {
                 handler(CLIENT_PLAYER_ABILITIES_UPDATE);
             }
         });
-        protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_PLAYER_GAME_TYPE, ClientboundPackets26_1.PLAYER_INFO_UPDATE, wrapper -> {
+        protocol.registerClientbound(ClientboundBedrockPackets.UPDATE_PLAYER_GAME_TYPE, ClientboundPackets26_3.PLAYER_INFO_UPDATE, wrapper -> {
             final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final PlayerListStorage playerList = wrapper.user().get(PlayerListStorage.class);
@@ -257,7 +257,9 @@ public class ClientPlayerPackets {
                 return;
             }
 
-            if (isClientPlayer) clientPlayer.setGameType(gameType);
+            if (isClientPlayer) {
+                clientPlayer.setGameType(gameType);
+            }
 
             wrapper.write(Types.PROFILE_ACTIONS_ENUM1_21_4, BitSets.create(8, PlayerInfoUpdateAction.UPDATE_GAME_MODE)); // actions
             wrapper.write(Types.VAR_INT, 1); // length
@@ -282,15 +284,15 @@ public class ClientPlayerPackets {
             wrapper.read(Types.BOOLEAN); // show name tags
             wrapper.read(Types.BOOLEAN); // auto jump
         });
-        protocol.registerClientbound(ClientboundBedrockPackets.OPEN_SIGN, ClientboundPackets26_1.OPEN_SIGN_EDITOR, new PacketHandlers() {
+        protocol.registerClientbound(ClientboundBedrockPackets.OPEN_SIGN, ClientboundPackets26_3.OPEN_SIGN_EDITOR, new PacketHandlers() {
             @Override
             protected void register() {
                 map(BedrockTypes.BLOCK_POSITION, Types.BLOCK_POSITION1_14); // position
-                map(Types.BOOLEAN); // front
+                map(Types.BOOLEAN, Types.VAR_INT, b -> b ? 1 : 0); // sign text slot
             }
         });
 
-        protocol.registerServerbound(ServerboundPackets26_1.CLIENT_COMMAND, ServerboundBedrockPackets.RESPAWN, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.CLIENT_COMMAND, ServerboundBedrockPackets.RESPAWN, wrapper -> {
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final ClientCommandAction action = ClientCommandAction.values()[wrapper.read(Types.VAR_INT)]; // action
 
@@ -304,42 +306,43 @@ public class ClientPlayerPackets {
                 default -> throw new IllegalStateException("Unhandled ClientCommandAction: " + action);
             }
         });
-        protocol.registerServerbound(ServerboundPackets26_1.PLAYER_COMMAND, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PLAYER_COMMAND, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             wrapper.read(Types.VAR_INT); // entity id
             final PlayerCommandAction action = PlayerCommandAction.values()[wrapper.read(Types.VAR_INT)]; // action
-            final int data = wrapper.read(Types.VAR_INT); // data
+            wrapper.read(Types.VAR_INT); // data
 
             switch (action) {
                 case START_SPRINTING -> {
                     clientPlayer.setSprinting(true);
-                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.StartSprinting);
+                    clientPlayer.addAuthInputData(PlayerAuthInputData.StartSprinting);
                 }
                 case STOP_SPRINTING -> {
                     clientPlayer.setSprinting(false);
-                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.StopSprinting);
+                    clientPlayer.addAuthInputData(PlayerAuthInputData.StopSprinting);
                 }
                 case START_FALL_FLYING -> {
-                    if (ViaBedrock.getConfig().shouldEnableExperimentalFeatures()) {
-                        clientPlayer.setGliding(true);
-                        clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.StartGliding);
-                    }
+                    clientPlayer.setGliding(true);
+                    clientPlayer.addAuthInputData(PlayerAuthInputData.StartGliding);
                 }
                 default -> throw new IllegalStateException("Unhandled PlayerCommandAction: " + action);
             }
         });
-        protocol.registerServerbound(ServerboundPackets26_1.PLAYER_ACTION, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PLAYER_ACTION, null, wrapper -> {
             wrapper.cancel();
             final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final ChunkTracker chunkTracker = wrapper.user().get(ChunkTracker.class);
             final PlayerActionAction action = PlayerActionAction.values()[wrapper.read(Types.VAR_INT)]; // action
+            if (InteractionPackets.handlePlayerAction(wrapper, action)) {
+                return;
+            }
             final BlockPosition position = wrapper.read(Types.BLOCK_POSITION1_14); // block position
             final Direction direction = Direction.values()[wrapper.read(Types.UNSIGNED_BYTE)]; // face
             final int sequence = wrapper.read(Types.VAR_INT); // sequence number
 
-            final boolean isMining = action == PlayerActionAction.START_DESTROY_BLOCK || action == PlayerActionAction.ABORT_DESTROY_BLOCK || action == PlayerActionAction.STOP_DESTROY_BLOCK;
+            final boolean isMining = action == PlayerActionAction.START_DESTROY_BLOCK || action == PlayerActionAction.ABORT_DESTROY_BLOCK || action == PlayerActionAction.STOP_DESTROY_BLOCK || action == PlayerActionAction.CHANGE_DESTROY_DIRECTION;
             if (isMining && (gameSession.isImmutableWorld() || !clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Mine))) {
                 // TODO: Prevent breaking and cancel any packets that would be sent (swing, player action)
                 PacketFactory.sendJavaBlockUpdate(wrapper.user(), position, chunkTracker.getJavaBlockState(position));
@@ -411,7 +414,7 @@ public class ClientPlayerPackets {
                 PacketFactory.sendJavaBlockChangedAck(wrapper.user(), sequence);
             }
         });
-        protocol.registerServerbound(ServerboundPackets26_1.ATTACK, ServerboundBedrockPackets.INVENTORY_TRANSACTION, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.ATTACK, ServerboundBedrockPackets.INVENTORY_TRANSACTION, wrapper -> {
             final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
             final InventoryContainer inventoryContainer = wrapper.user().get(InventoryTracker.class).getInventoryContainer();
             final int entityId = wrapper.read(Types.VAR_INT); // entity id
@@ -423,12 +426,10 @@ public class ClientPlayerPackets {
 
             wrapper.write(BedrockTypes.VAR_INT, 0); // legacy request id
             wrapper.write(Types.BOOLEAN, false); // has legacy data
-            wrapper.write(Types.BOOLEAN, true); // has transaction type
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ComplexInventoryTransaction_Type.ItemUseOnEntityTransaction.getValue()); // transaction type
-            wrapper.write(Types.BOOLEAN, true); // has transaction data
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // actions count
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
-            wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorInventoryTransaction_ActionType.Attack.getValue()); // action type
+            wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorActionType.Attack.getValue()); // action type
             wrapper.write(BedrockTypes.VAR_INT, (int) inventoryContainer.getSelectedHotbarSlot()); // hotbar slot
             wrapper.write(wrapper.user().get(ItemRewriter.class).newItemType(), inventoryContainer.getSelectedHotbarItem()); // held item
             wrapper.write(BedrockTypes.POSITION_3F, entityTracker.getClientPlayer().position()); // player position
@@ -437,7 +438,7 @@ public class ClientPlayerPackets {
             entityTracker.getClientPlayer().sendSwingPacketToServer();
             entityTracker.getClientPlayer().cancelNextSwingPacket();
         });
-        protocol.registerServerbound(ServerboundPackets26_1.INTERACT, ServerboundBedrockPackets.INVENTORY_TRANSACTION, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.INTERACT, ServerboundBedrockPackets.INVENTORY_TRANSACTION, wrapper -> {
             final EntityTracker entityTracker = wrapper.user().get(EntityTracker.class);
             final InventoryContainer inventoryContainer = wrapper.user().get(InventoryTracker.class).getInventoryContainer();
             final int entityId = wrapper.read(Types.VAR_INT); // entity id
@@ -456,12 +457,10 @@ public class ClientPlayerPackets {
 
             wrapper.write(BedrockTypes.VAR_INT, 0); // legacy request id
             wrapper.write(Types.BOOLEAN, false); // has legacy data
-            wrapper.write(Types.BOOLEAN, true); // has transaction type
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ComplexInventoryTransaction_Type.ItemUseOnEntityTransaction.getValue()); // transaction type
-            wrapper.write(Types.BOOLEAN, true); // has transaction data
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, 0); // actions count
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
-            wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorInventoryTransaction_ActionType.Interact.getValue()); // action type
+            wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorActionType.Interact.getValue()); // action type
             wrapper.write(BedrockTypes.VAR_INT, (int) inventoryContainer.getSelectedHotbarSlot()); // hotbar slot
             wrapper.write(wrapper.user().get(ItemRewriter.class).newItemType(), inventoryContainer.getSelectedHotbarItem()); // held item
             wrapper.write(BedrockTypes.POSITION_3F, entityTracker.getClientPlayer().position()); // player position
@@ -469,45 +468,45 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.POSITION_3F, entity.position().add((float) location.x(), (float) location.y(), (float) location.z())); // click position
             wrapper.read(Types.BOOLEAN); // using secondary action
         });
-        protocol.registerServerbound(ServerboundPackets26_1.MOVE_PLAYER_STATUS_ONLY, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.MOVE_PLAYER_STATUS_ONLY, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.updatePlayerPosition(wrapper.read(Types.UNSIGNED_BYTE));
         });
-        protocol.registerServerbound(ServerboundPackets26_1.MOVE_PLAYER_POS, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.MOVE_PLAYER_POS, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.updatePlayerPosition(wrapper.read(Types.DOUBLE), wrapper.read(Types.DOUBLE), wrapper.read(Types.DOUBLE), wrapper.read(Types.UNSIGNED_BYTE));
         });
-        protocol.registerServerbound(ServerboundPackets26_1.MOVE_PLAYER_POS_ROT, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.MOVE_PLAYER_POS_ROT, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.updatePlayerPosition(wrapper.read(Types.DOUBLE), wrapper.read(Types.DOUBLE), wrapper.read(Types.DOUBLE), MathUtil.wrapDegrees(wrapper.read(Types.FLOAT)), wrapper.read(Types.FLOAT), wrapper.read(Types.UNSIGNED_BYTE));
         });
-        protocol.registerServerbound(ServerboundPackets26_1.MOVE_PLAYER_ROT, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.MOVE_PLAYER_ROT, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.updatePlayerPosition(MathUtil.wrapDegrees(wrapper.read(Types.FLOAT)), wrapper.read(Types.FLOAT), wrapper.read(Types.UNSIGNED_BYTE));
         });
-        protocol.registerServerbound(ServerboundPackets26_1.ACCEPT_TELEPORTATION, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.ACCEPT_TELEPORTATION, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             clientPlayer.confirmTeleport(wrapper.read(Types.VAR_INT)); // teleport id
         });
-        protocol.registerServerbound(ServerboundPackets26_1.PLAYER_INPUT, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PLAYER_INPUT, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final Set<InputFlag> inputFlags = EnumUtil.getEnumSetFromBitmask(InputFlag.class, wrapper.read(Types.BYTE), InputFlag::ordinal); // input flags
             clientPlayer.setInputFlags(inputFlags);
         });
-        protocol.registerServerbound(ServerboundPackets26_1.PADDLE_BOAT, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PADDLE_BOAT, null, wrapper -> {
             wrapper.cancel();
             wrapper.user().get(EntityTracker.class).getClientPlayer().setPaddling(
                 wrapper.read(Types.BOOLEAN), // left paddle
                 wrapper.read(Types.BOOLEAN) // right paddle
             );
         });
-        protocol.registerServerbound(ServerboundPackets26_1.MOVE_VEHICLE, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.MOVE_VEHICLE, null, wrapper -> {
             wrapper.cancel();
             final Position3f position = new Position3f(
                 wrapper.read(Types.DOUBLE).floatValue(),
@@ -519,7 +518,7 @@ public class ClientPlayerPackets {
             final boolean onGround = wrapper.read(Types.BOOLEAN);
             wrapper.user().get(EntityTracker.class).getClientPlayer().updateVehicleMovement(position, yaw, pitch, onGround);
         });
-        protocol.registerServerbound(ServerboundPackets26_1.CLIENT_TICK_END, ServerboundBedrockPackets.PLAYER_AUTH_INPUT, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.CLIENT_TICK_END, ServerboundBedrockPackets.PLAYER_AUTH_INPUT, wrapper -> {
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final Position3f prevPosition = clientPlayer.prevPosition();
             final boolean prevOnGround = clientPlayer.prevOnGround();
@@ -527,18 +526,18 @@ public class ClientPlayerPackets {
             clientPlayer.tick();
 
             if (prevOnGround && clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.StartJumping);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.StartJumping);
             }
 
             if (clientPlayer.isGliding() && (
-                    clientPlayer.isOnGround() ||
-                    clientPlayer.effects().containsKey("minecraft:levitation") ||
-                    clientPlayer.entityFlags().contains(ActorFlags.WALLCLIMBING) ||
-                    clientPlayer.entityFlags().contains(ActorFlags.IN_ASCENDABLE_BLOCK) ||
-                    clientPlayer.entityFlags().contains(ActorFlags.IN_SCAFFOLDING)
-            )) {
+                clientPlayer.isOnGround()
+                    || clientPlayer.effects().containsKey("minecraft:levitation")
+                    || clientPlayer.entityFlags().contains(ActorFlags.WALLCLIMBING)
+                    || clientPlayer.entityFlags().contains(ActorFlags.IN_ASCENDABLE_BLOCK)
+                    || clientPlayer.entityFlags().contains(ActorFlags.IN_SCAFFOLDING))
+            ) {
                 clientPlayer.setGliding(false);
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.StopGliding);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.StopGliding);
             }
 
             if (!clientPlayer.isInitiallySpawned() || clientPlayer.isDead()) {
@@ -548,24 +547,24 @@ public class ClientPlayerPackets {
 
             clientPlayer.recordMovementPrediction();
 
-            clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.BlockBreakingDelayEnabled);
+            clientPlayer.addAuthInputData(PlayerAuthInputData.BlockBreakingDelayEnabled);
             if (clientPlayer.isOnGround()) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.VerticalCollision);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.VerticalCollision);
             }
             if (clientPlayer.horizontalCollision()) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.HorizontalCollision);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.HorizontalCollision);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.FORWARD)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.Up);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.Up);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.BACKWARD)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.Down);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.Down);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.LEFT)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.Left);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.Left);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.RIGHT)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.Right);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.Right);
             }
             clientPlayer.authInputData().addAll(verticalMovementInput(
                 clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying),
@@ -575,30 +574,30 @@ public class ClientPlayerPackets {
                 clientPlayer.position().y() - prevPosition.y()
             ));
             if (clientPlayer.inputFlags().contains(InputFlag.SPRINT)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SprintDown, PlayerAuthInputPacketPayload_InputData.Sprinting);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.SprintDown, PlayerAuthInputData.Sprinting);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.JUMP) && !prevInputFlags.contains(InputFlag.JUMP)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.JumpPressedRaw);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.JumpPressedRaw);
             }
             if (prevInputFlags.contains(InputFlag.JUMP) && !clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.JumpReleasedRaw);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.JumpReleasedRaw);
             }
             if (clientPlayer.inputFlags().contains(InputFlag.SHIFT) && !prevInputFlags.contains(InputFlag.SHIFT)) {
                 clientPlayer.setSneaking(true);
                 clientPlayer.requestDismount();
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SneakPressedRaw, PlayerAuthInputPacketPayload_InputData.StartSneaking);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.SneakPressedRaw, PlayerAuthInputData.StartSneaking);
             }
             if (prevInputFlags.contains(InputFlag.SHIFT) && !clientPlayer.inputFlags().contains(InputFlag.SHIFT)) {
                 clientPlayer.setSneaking(false);
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.SneakReleasedRaw, PlayerAuthInputPacketPayload_InputData.StopSneaking);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.SneakReleasedRaw, PlayerAuthInputData.StopSneaking);
             }
             if (clientPlayer.hasClientPredictedVehicle()) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.IsInClientPredictedVehicle);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.IsInClientPredictedVehicle);
                 if (clientPlayer.isPaddlingLeft()) {
-                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.PaddlingLeft);
+                    clientPlayer.addAuthInputData(PlayerAuthInputData.PaddlingLeft);
                 }
                 if (clientPlayer.isPaddlingRight()) {
-                    clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.PaddlingRight);
+                    clientPlayer.addAuthInputData(PlayerAuthInputData.PaddlingRight);
                 }
             }
 
@@ -631,10 +630,11 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.POSITION_3F, clientPlayer.position()); // position
             wrapper.write(BedrockTypes.POSITION_2F, MathUtil.calculateMovementDirections(clientPlayer.authInputData(), clientPlayer.isSneaking())); // move vector
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().z()); // head yaw
-            wrapper.write(Types.BOOLEAN, true); // input data present
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, clientPlayer.authInputData().size()); // input flags count
-            for (PlayerAuthInputPacketPayload_InputData inputData : clientPlayer.authInputData()) {
-                wrapper.write(BedrockTypes.VAR_INT, inputData.getValue()); // input flag
+            for (PlayerAuthInputData inputData : PlayerAuthInputData.values()) {
+                if (clientPlayer.authInputData().contains(inputData)) {
+                    wrapper.write(BedrockTypes.VAR_INT, inputData.getValue()); // input flag
+                }
             }
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, InputMode.Mouse.getValue()); // input mode
             wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, ClientPlayMode.Screen.getValue()); // play mode
@@ -643,12 +643,9 @@ public class ClientPlayerPackets {
             wrapper.write(BedrockTypes.FLOAT_LE, clientPlayer.rotation().y()); // interact yaw
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, (long) clientPlayer.age()); // tick
             wrapper.write(BedrockTypes.POSITION_3F, velocity); // delta
-            wrapper.write(Types.BOOLEAN, true); // Item Use Transaction field present
             wrapper.write(Types.BOOLEAN, false); // no Item Use Transaction value
-            wrapper.write(Types.BOOLEAN, true); // Item Stack Request field present
             wrapper.write(Types.BOOLEAN, false); // no Item Stack Request value
-            wrapper.write(Types.BOOLEAN, true); // Player Block Actions field present
-            if (clientPlayer.authInputData().contains(PlayerAuthInputPacketPayload_InputData.PerformBlockActions)) {
+            if (clientPlayer.authInputData().contains(PlayerAuthInputData.PerformBlockActions)) {
                 wrapper.write(Types.BOOLEAN, true); // Player Block Actions value present
                 wrapper.write(BedrockTypes.UNSIGNED_VAR_INT, clientPlayer.authInputBlockActions().size()); // player block actions count
                 for (ClientPlayerEntity.AuthInputBlockAction blockAction : clientPlayer.authInputBlockActions()) {
@@ -660,17 +657,15 @@ public class ClientPlayerPackets {
             } else {
                 wrapper.write(Types.BOOLEAN, false); // no Player Block Actions value
             }
-            wrapper.write(Types.BOOLEAN, true); // Vehicle Rotation field present
             if (clientPlayer.hasClientPredictedVehicle()) {
                 wrapper.write(Types.BOOLEAN, true); // Vehicle Rotation value present
                 wrapper.write(BedrockTypes.POSITION_2F, clientPlayer.vehicleRotation()); // vehicle rotation
             } else {
                 wrapper.write(Types.BOOLEAN, false); // no Vehicle Rotation value
             }
-            wrapper.write(Types.BOOLEAN, true); // Client Predicted Vehicle field present
             if (clientPlayer.hasClientPredictedVehicle()) {
                 wrapper.write(Types.BOOLEAN, true); // Client Predicted Vehicle value present
-                wrapper.write(BedrockTypes.VAR_LONG, clientPlayer.mountEntityRId()); // predicted vehicle runtime id
+                wrapper.write(BedrockTypes.VAR_LONG, clientPlayer.mountEntityRuntimeId()); // predicted vehicle runtime id
             } else {
                 wrapper.write(Types.BOOLEAN, false); // no Client Predicted Vehicle value
             }
@@ -681,17 +676,17 @@ public class ClientPlayerPackets {
             clientPlayer.authInputData().clear();
             clientPlayer.authInputBlockActions().clear();
         });
-        protocol.registerServerbound(ServerboundPackets26_1.PLAYER_ABILITIES, null, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PLAYER_ABILITIES, null, wrapper -> {
             wrapper.cancel();
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
             final byte flags = wrapper.read(Types.BYTE); // flags
             final boolean flying = (flags & AbilitiesFlag.FLYING.getBit()) != 0;
             if (flying != clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying)) {
                 clientPlayer.abilities().getOrCreateCacheLayer().setAbility(AbilitiesIndex.Flying, flying);
-                clientPlayer.addAuthInputData(flying ? PlayerAuthInputPacketPayload_InputData.StartFlying : PlayerAuthInputPacketPayload_InputData.StopFlying);
+                clientPlayer.addAuthInputData(flying ? PlayerAuthInputData.StartFlying : PlayerAuthInputData.StopFlying);
             }
         });
-        protocol.registerServerbound(ServerboundPackets26_1.CHANGE_GAME_MODE, ServerboundBedrockPackets.SET_PLAYER_GAME_TYPE, new PacketHandlers() {
+        protocol.registerServerbound(ServerboundPackets26_3.CHANGE_GAME_MODE, ServerboundBedrockPackets.SET_PLAYER_GAME_TYPE, new PacketHandlers() {
             @Override
             protected void register() {
                 handler(wrapper -> {
@@ -711,11 +706,10 @@ public class ClientPlayerPackets {
                 handler(CLIENT_PLAYER_ABILITIES_UPDATE);
             }
         });
-        protocol.registerServerbound(ServerboundPackets26_1.SWING, ServerboundBedrockPackets.ANIMATE, wrapper -> {
+        protocol.registerServerbound(ServerboundPackets26_3.PUNCH, ServerboundBedrockPackets.ANIMATE, wrapper -> {
             final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
             final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
-            final InteractionHand hand = InteractionHand.values()[wrapper.read(Types.VAR_INT)]; // hand
-            if (hand != InteractionHand.MAIN_HAND || clientPlayer.checkCancelSwingPacket()) {
+            if (clientPlayer.checkCancelSwingPacket()) {
                 wrapper.cancel();
                 return;
             }
@@ -743,7 +737,7 @@ public class ClientPlayerPackets {
                     PlayerActionType.CrackBlock, blockBreakingInfo.position(), blockBreakingInfo.direction().ordinal()
                 ));
             } else if (swingHandling.sendMissedSwing()) {
-                clientPlayer.addAuthInputData(PlayerAuthInputPacketPayload_InputData.MissedSwing);
+                clientPlayer.addAuthInputData(PlayerAuthInputData.MissedSwing);
             }
         });
     }
@@ -752,46 +746,54 @@ public class ClientPlayerPackets {
                                                final boolean pendingBreaking,
                                                final boolean serverAuthoritativeBreaking) {
         return blockBreaking || pendingBreaking
-            ? new SwingHandling(false, !serverAuthoritativeBreaking, false)
+            ? new SwingHandling(false, blockBreaking && !serverAuthoritativeBreaking, false)
             : new SwingHandling(true, false, true);
     }
 
-    public record SwingHandling(boolean forwardAnimation, boolean sendCrackBlock, boolean sendMissedSwing) {
-    }
-
     /** Maps Java's vertical keys to the continuous Bedrock input flags for this tick. */
-    public static Set<PlayerAuthInputPacketPayload_InputData> verticalMovementInput(final boolean flying,
+    public static Set<PlayerAuthInputData> verticalMovementInput(final boolean flying,
                                                                                      final boolean jumping,
                                                                                      final boolean shifting,
                                                                                      final boolean climbing,
                                                                                      final float verticalDelta) {
-        final Set<PlayerAuthInputPacketPayload_InputData> input =
-            EnumSet.noneOf(PlayerAuthInputPacketPayload_InputData.class);
+        final Set<PlayerAuthInputData> input =
+            EnumSet.noneOf(PlayerAuthInputData.class);
         if (jumping) {
-            input.add(PlayerAuthInputPacketPayload_InputData.JumpDown);
-            input.add(PlayerAuthInputPacketPayload_InputData.Jumping);
-            input.add(PlayerAuthInputPacketPayload_InputData.WantUp);
-            input.add(PlayerAuthInputPacketPayload_InputData.JumpCurrentRaw);
-            if (flying) input.add(PlayerAuthInputPacketPayload_InputData.Ascend);
+            input.add(PlayerAuthInputData.JumpDown);
+            input.add(PlayerAuthInputData.Jumping);
+            input.add(PlayerAuthInputData.WantUp);
+            input.add(PlayerAuthInputData.JumpCurrentRaw);
+            if (flying) {
+                input.add(PlayerAuthInputData.Ascend);
+            }
         }
         if (shifting) {
-            input.add(PlayerAuthInputPacketPayload_InputData.SneakDown);
-            input.add(PlayerAuthInputPacketPayload_InputData.Sneaking);
-            input.add(PlayerAuthInputPacketPayload_InputData.WantDown);
-            input.add(PlayerAuthInputPacketPayload_InputData.SneakCurrentRaw);
-            if (flying) input.add(PlayerAuthInputPacketPayload_InputData.Descend);
+            input.add(PlayerAuthInputData.SneakDown);
+            input.add(PlayerAuthInputData.Sneaking);
+            input.add(PlayerAuthInputData.WantDown);
+            input.add(PlayerAuthInputData.SneakCurrentRaw);
+            // While flying, Descend mirrors Java's held sneak input.
+            if (flying) {
+                input.add(PlayerAuthInputData.Descend);
+            }
         }
         // Java climbs ladders by resolving its collision and forward motion, often without a
         // jump key. Tell Bedrock which continuous direction Java actually moved so its rewind
         // predictor does not fight the next Java position. Do not synthesize raw key edges or
         // sneaking, which would alter gameplay state.
         if (climbing && verticalDelta > 0.0001F) {
-            input.add(PlayerAuthInputPacketPayload_InputData.Jumping);
-            input.add(PlayerAuthInputPacketPayload_InputData.WantUp);
+            input.add(PlayerAuthInputData.Jumping);
+            input.add(PlayerAuthInputData.WantUp);
         } else if (climbing && verticalDelta < -0.0001F) {
-            input.add(PlayerAuthInputPacketPayload_InputData.WantDown);
+            input.add(PlayerAuthInputData.WantDown);
         }
         return input;
+    }
+
+    private ClientPlayerPackets() {
+    }
+
+    public record SwingHandling(boolean forwardAnimation, boolean sendCrackBlock, boolean sendMissedSwing) {
     }
 
 }

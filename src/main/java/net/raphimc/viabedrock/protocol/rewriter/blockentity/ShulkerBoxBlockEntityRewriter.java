@@ -40,7 +40,9 @@ public final class ShulkerBoxBlockEntityRewriter extends LootableContainerBlockE
     }
 
     public static BlockState orientedState(final BlockState baseState, final int bedrockFacing) {
-        if (baseState == null || !baseState.identifier().endsWith("shulker_box")) return baseState;
+        if (baseState == null || !baseState.identifier().endsWith("shulker_box")) {
+            return baseState;
+        }
         final int facing = bedrockFacing >= 0 && bedrockFacing < FACINGS.length ? bedrockFacing : 1;
         return baseState.withProperty("facing", FACINGS[facing]);
     }

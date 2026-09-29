@@ -26,7 +26,7 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 public class EntityDataType extends EntityDataTypeTemplate {
 
     @Override
-    public EntityData read(ByteBuf buffer) {
+    public EntityData read(final ByteBuf buffer) {
         final int index = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
         final int rawDataItemType = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
         final int oneOfDataItemType = buffer.readUnsignedByte();
@@ -42,11 +42,11 @@ public class EntityDataType extends EntityDataTypeTemplate {
     }
 
     @Override
-    public void write(ByteBuf buffer, EntityData value) {
-        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.id());
-        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.dataType().typeId());
-        buffer.writeByte(value.dataType().typeId());
-        value.dataType().type().write(buffer, value.value());
+    public void write(final ByteBuf buffer, final EntityData value) {
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.id()); // id
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, value.dataType().typeId()); // oneOf
+        buffer.writeByte(value.dataType().typeId()); // type
+        value.dataType().type().write(buffer, value.value()); // value
     }
 
 }

@@ -18,7 +18,7 @@
 package net.raphimc.viabedrock.api.model.entity;
 
 import com.viaversion.viaversion.api.connection.UserConnection;
-import com.viaversion.viaversion.api.minecraft.entities.EntityTypes26_2;
+import com.viaversion.viaversion.api.minecraft.entities.EntityTypes26_3;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 
 import java.util.UUID;
@@ -34,7 +34,7 @@ public final class ItemEntity extends Entity {
 
     public ItemEntity(final UserConnection user, final long uniqueId, final long runtimeId,
                       final int javaId, final UUID javaUuid, final BedrockItem item) {
-        super(user, uniqueId, runtimeId, "minecraft:item", javaId, javaUuid, EntityTypes26_2.ITEM);
+        super(user, uniqueId, runtimeId, "minecraft:item", javaId, javaUuid, EntityTypes26_3.ITEM);
         this.item = item.copy();
     }
 

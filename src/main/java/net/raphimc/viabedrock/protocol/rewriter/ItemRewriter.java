@@ -40,7 +40,6 @@ import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.api.resourcepack.definition.ItemDefinitions;
 import net.raphimc.viabedrock.api.util.TextUtil;
-import net.raphimc.viabedrock.experimental.rewriter.ExperimentalItemRewriter;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.BedrockMappingData;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
@@ -123,7 +122,9 @@ public class ItemRewriter extends StoredObject {
     }
 
     public Item javaItem(final BedrockItem bedrockItem) {
-        if (bedrockItem.isEmpty()) return StructuredItem.empty();
+        if (bedrockItem.isEmpty()) {
+            return StructuredItem.empty();
+        }
 
         final String identifier = this.items.inverse().get(bedrockItem.identifier());
         if (identifier == null) {
@@ -222,9 +223,7 @@ public class ItemRewriter extends StoredObject {
             }
         }
 
-        if (ViaBedrock.getConfig().shouldEnableExperimentalFeatures()) {
-            ExperimentalItemRewriter.handleItem(this.user(), bedrockItem, bedrockTag, javaItem);
-        }
+        ItemDataRewriter.handleItem(this.user(), bedrockItem, bedrockTag, javaItem);
 
         final String tag = BedrockProtocol.MAPPINGS.getBedrockCustomItemTags().get(identifier);
         if (ITEM_NBT_REWRITERS.containsKey(tag)) {
@@ -241,33 +240,33 @@ public class ItemRewriter extends StoredObject {
             return null;
         }
 
-        String bedrockId = bedrockTag.getString("Name");
+        final String bedrockId = bedrockTag.getString("Name");
         if (bedrockId == null || bedrockId.isEmpty()) {
             return null;
         }
 
-        Integer id = this.items.get(bedrockId);
+        final Integer id = this.items.get(bedrockId);
         if (id == null) {
             ViaBedrock.getPlatform().getLogger().warning("Could not find item " + bedrockId);
             return null;
         }
 
-        BedrockItem item = new BedrockItem(
-                id,
-                (short) 0,
-                bedrockTag.getByte("Count"),
-                bedrockTag.getCompoundTag("tag")
+        final BedrockItem item = new BedrockItem(
+            id,
+            (short) 0,
+            bedrockTag.getByte("Count"),
+            bedrockTag.getCompoundTag("tag")
         );
         if (item.isEmpty()) {
             return null;
         }
 
-        Item javaItem = this.javaItem(item);
+        final Item javaItem = this.javaItem(item);
 
-        String javaId = BedrockProtocol.MAPPINGS.getJavaItems().inverse().get(javaItem.identifier());
+        final String javaId = BedrockProtocol.MAPPINGS.getJavaItems().inverse().get(javaItem.identifier());
         javaTag.put("id", new StringTag(javaId));
 
-        javaTag.put("count",new IntTag(javaItem.amount()));
+        javaTag.put("count", new IntTag(javaItem.amount()));
         if (javaItem.tag() != null) {
             javaTag.put("components", javaItem.tag());
         }
@@ -285,7 +284,9 @@ public class ItemRewriter extends StoredObject {
 
     /** Decodes the item-compound shape used by Bedrock trade offer NBT. */
     public BedrockItem bedrockItemFromTag(final CompoundTag itemTag) {
-        if (itemTag == null || itemTag.isEmpty()) return BedrockItem.empty();
+        if (itemTag == null || itemTag.isEmpty()) {
+            return BedrockItem.empty();
+        }
 
         final String identifier = itemTag.getString("Name", "");
         final Integer runtimeId = this.items.get(identifier);
@@ -316,10 +317,14 @@ public class ItemRewriter extends StoredObject {
     }
 
     public int maxStackSize(final BedrockItem bedrockItem) {
-        if (bedrockItem == null || bedrockItem.isEmpty()) return 64;
+        if (bedrockItem == null || bedrockItem.isEmpty()) {
+            return 64;
+        }
 
         final String identifier = this.items.inverse().get(bedrockItem.identifier());
-        if (identifier == null) return 64;
+        if (identifier == null) {
+            return 64;
+        }
 
         final ItemDefinitions.ItemDefinition itemDefinition = this.user().get(ResourcePackStorage.class).getItems().get(identifier);
         if (itemDefinition != null && itemDefinition.maxStackSize() != null) {

@@ -128,4 +128,5 @@ public final class InventoryStackRequestType extends Type<InventoryStackRequest>
             userData.release();
         }
     }
+
 }

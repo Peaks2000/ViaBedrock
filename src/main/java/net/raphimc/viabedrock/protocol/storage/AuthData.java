@@ -47,6 +47,11 @@ public class AuthData implements StorableObject {
         this.deviceId = deviceId;
     }
 
+    @Deprecated(forRemoval = true)
+    public AuthData(final String mojangJwt, final String identityJwt, final String multiplayerToken, final KeyPair sessionKeyPair, final UUID deviceId) {
+        this(multiplayerToken, sessionKeyPair, deviceId);
+    }
+
     public String getMultiplayerToken() {
         return this.multiplayerToken;
     }
@@ -127,11 +132,6 @@ public class AuthData implements StorableObject {
             return "";
         }
         return this.multiplayerTokenJwt.payload().get("mid").getAsString();
-    }
-
-    @Deprecated(forRemoval = true)
-    public AuthData(final String mojangJwt, final String identityJwt, final String multiplayerToken, final KeyPair sessionKeyPair, final UUID deviceId) {
-        this(multiplayerToken, sessionKeyPair, deviceId);
     }
 
 }

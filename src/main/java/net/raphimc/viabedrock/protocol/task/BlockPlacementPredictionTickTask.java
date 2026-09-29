@@ -48,10 +48,11 @@ public final class BlockPlacementPredictionTickTask implements Runnable {
                     if (!expiration.resyncPositions().isEmpty()) {
                         PacketFactory.flushJavaBlockChangedAck(info);
                     }
-                } catch (Throwable e) {
+                } catch (final Throwable e) {
                     BedrockProtocol.kickForIllegalState(info, "Error ticking block placement predictions. See console for details.", e);
                 }
             });
         }
     }
+
 }

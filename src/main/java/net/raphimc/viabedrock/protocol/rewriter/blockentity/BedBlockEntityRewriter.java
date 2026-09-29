@@ -34,7 +34,7 @@ import java.util.Locale;
 public class BedBlockEntityRewriter implements BlockEntityRewriter.Rewriter {
 
     @Override
-    public BlockEntity toJava(UserConnection user, BedrockBlockEntity bedrockBlockEntity) {
+    public BlockEntity toJava(final UserConnection user, final BedrockBlockEntity bedrockBlockEntity) {
         final CompoundTag bedrockTag = bedrockBlockEntity.tag();
 
         final DyeColor color = DyeColor.getByJavaId(bedrockTag.getByte("color", (byte) -1), DyeColor.RED);
@@ -47,7 +47,9 @@ public class BedBlockEntityRewriter implements BlockEntityRewriter.Rewriter {
     }
 
     public static BlockState coloredBedState(final BlockState baseState, final DyeColor color) {
-        if (baseState == null || !baseState.identifier().endsWith("_bed")) return baseState;
+        if (baseState == null || !baseState.identifier().endsWith("_bed")) {
+            return baseState;
+        }
         return baseState.withIdentifier(color.name().toLowerCase(Locale.ROOT) + "_bed");
     }
 

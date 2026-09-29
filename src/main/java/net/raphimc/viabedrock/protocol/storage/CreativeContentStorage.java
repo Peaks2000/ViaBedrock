@@ -31,7 +31,9 @@ public final class CreativeContentStorage extends StoredObject {
     }
 
     public void add(final int networkId, final BedrockItem bedrockItem, final Item javaItem) {
-        if (networkId <= 0 || bedrockItem.isEmpty() || javaItem.isEmpty()) return;
+        if (networkId <= 0 || bedrockItem.isEmpty() || javaItem.isEmpty()) {
+            return;
+        }
 
         final Item normalizedJavaItem = javaItem.copy();
         normalizedJavaItem.setAmount(1);
@@ -39,17 +41,23 @@ public final class CreativeContentStorage extends StoredObject {
     }
 
     public CreativeItem find(final Item requestedItem) {
-        if (requestedItem.isEmpty()) return null;
+        if (requestedItem.isEmpty()) {
+            return null;
+        }
 
         final Item normalizedRequestedItem = requestedItem.copy();
         normalizedRequestedItem.setAmount(1);
         CreativeItem identifierFallback = null;
         for (CreativeItem creativeItem : this.items) {
-            if (creativeItem.javaItem().identifier() != requestedItem.identifier()) continue;
+            if (creativeItem.javaItem().identifier() != requestedItem.identifier()) {
+                continue;
+            }
             if (creativeItem.javaItem().equals(normalizedRequestedItem)) {
                 return creativeItem.withAmount(requestedItem.amount());
             }
-            if (identifierFallback == null) identifierFallback = creativeItem;
+            if (identifierFallback == null) {
+                identifierFallback = creativeItem;
+            }
         }
         return identifierFallback != null ? identifierFallback.withAmount(requestedItem.amount()) : null;
     }
@@ -62,4 +70,5 @@ public final class CreativeContentStorage extends StoredObject {
             return new CreativeItem(this.networkId, item, this.javaItem);
         }
     }
+
 }

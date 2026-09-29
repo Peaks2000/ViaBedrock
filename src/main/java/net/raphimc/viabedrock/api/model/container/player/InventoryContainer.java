@@ -23,13 +23,13 @@ import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.api.minecraft.item.StructuredItem;
 import com.viaversion.viaversion.api.protocol.packet.PacketWrapper;
 import com.viaversion.viaversion.api.type.Types;
-import com.viaversion.viaversion.protocols.v1_21_11to26_1.packet.ClientboundPackets26_1;
+import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
 import net.raphimc.viabedrock.api.model.container.Container;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerID;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
@@ -122,7 +122,9 @@ public class InventoryContainer extends Container {
      * @return the number of items inserted into the tracked inventory
      */
     public int predictPickup(final BedrockItem pickedUpItem) {
-        if (pickedUpItem.isEmpty()) return 0;
+        if (pickedUpItem.isEmpty()) {
+            return 0;
+        }
 
         int remaining = pickedUpItem.amount();
         final int maxStackSize = this.user.get(ItemRewriter.class).maxStackSize(pickedUpItem);
@@ -130,7 +132,9 @@ public class InventoryContainer extends Container {
             remaining = this.mergePickupIntoSlot(pickedUpItem, slot, remaining, maxStackSize);
         }
         for (int slot = 0; slot < this.items.length && remaining > 0; slot++) {
-            if (!this.items[slot].isEmpty()) continue;
+            if (!this.items[slot].isEmpty()) {
+                continue;
+            }
 
             final int inserted = Math.min(remaining, maxStackSize);
             final BedrockItem newItem = pickedUpItem.copy();
@@ -155,7 +159,7 @@ public class InventoryContainer extends Container {
     }
 
     public void sendSelectedHotbarSlotToClient() {
-        final PacketWrapper setHeldSlot = PacketWrapper.create(ClientboundPackets26_1.SET_HELD_SLOT, this.user);
+        final PacketWrapper setHeldSlot = PacketWrapper.create(ClientboundPackets26_3.SET_HELD_SLOT, this.user);
         setHeldSlot.write(Types.VAR_INT, (int) this.selectedHotbarSlot);
         setHeldSlot.send(BedrockProtocol.class);
     }

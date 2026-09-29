@@ -42,4 +42,5 @@ public record BedrockTradeOffer(
     public boolean outOfStock() {
         return this.maxUses <= 0 || this.uses >= this.maxUses;
     }
+
 }

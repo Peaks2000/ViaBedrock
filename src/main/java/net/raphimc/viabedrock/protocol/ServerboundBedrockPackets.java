@@ -101,7 +101,8 @@ public enum ServerboundBedrockPackets implements ServerboundPacketType {
     CLIENT_CAMERA_AIM_ASSIST(MinecraftPacketIds.ClientCameraAimAssist.getValue()),
     MOVEMENT_PREDICTION_SYNC(MinecraftPacketIds.ClientMovementPredictionSyncPacket.getValue()),
     UPDATE_CLIENT_OPTIONS(MinecraftPacketIds.UpdateClientOptions.getValue()),
-    PLAYER_LOCATION(MinecraftPacketIds.PlayerLocation.getValue());
+    PLAYER_LOCATION(MinecraftPacketIds.PlayerLocation.getValue()),
+    STONECUTTER_SET_RECIPE(MinecraftPacketIds.ServerboundStonecutterSetRecipePacket.getValue());
     //PACK_SETTING_CHANGE(MinecraftPacketIds.ServerboundPackSettingChange.getValue()),
     //DATA_STORE(MinecraftPacketIds.ServerboundDataStore.getValue()),
     //RESOURCE_PACKS_READY_FOR_VALIDATION(MinecraftPacketIds.ResourcePacksReadyForValidation.getValue()),
@@ -110,6 +111,8 @@ public enum ServerboundBedrockPackets implements ServerboundPacketType {
 
     private static final ServerboundBedrockPackets[] REGISTRY = new ServerboundBedrockPackets[512];
 
+    private final int id;
+
     static {
         for (ServerboundBedrockPackets packet : values()) {
             REGISTRY[packet.id] = packet;
@@ -117,7 +120,9 @@ public enum ServerboundBedrockPackets implements ServerboundPacketType {
     }
 
     public static ServerboundBedrockPackets getPacket(final int id) {
-        if (id < 0 || id >= REGISTRY.length) return null;
+        if (id < 0 || id >= REGISTRY.length) {
+            return null;
+        }
 
         return REGISTRY[id];
     }
@@ -125,8 +130,6 @@ public enum ServerboundBedrockPackets implements ServerboundPacketType {
     ServerboundBedrockPackets(final int id) {
         this.id = id;
     }
-
-    private final int id;
 
     @Override
     public int getId() {

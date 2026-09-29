@@ -239,4 +239,5 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
             return this.clickedPosition.equals(position) || this.expectedUpdatePosition.equals(position);
         }
     }
+
 }

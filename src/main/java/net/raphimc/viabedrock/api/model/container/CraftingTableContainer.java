@@ -13,7 +13,7 @@ import com.viaversion.viaversion.api.connection.UserConnection;
 import com.viaversion.viaversion.api.minecraft.item.Item;
 import com.viaversion.viaversion.api.minecraft.item.StructuredItem;
 import com.viaversion.viaversion.libs.mcstructs.text.TextComponent;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.ContainerType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerType;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ContainerEnumName;
 import net.raphimc.viabedrock.protocol.model.BedrockItem;
 import net.raphimc.viabedrock.protocol.model.FullContainerName;
@@ -72,22 +72,35 @@ public final class CraftingTableContainer extends Container {
 
     @Override
     public int javaSlot(final int slot) {
-        if (slot >= 32 && slot <= 40) return slot - 31;
-        if (slot == 50) return 0;
+        if (slot >= 32 && slot <= 40) {
+            return slot - 31;
+        }
+        if (slot == 50) {
+            return 0;
+        }
         return slot;
     }
 
     @Override
     public int bedrockSlot(final int slot) {
-        if (slot >= 1 && slot <= 9) return slot + 31;
-        if (slot == 0) return 50;
+        if (slot >= 1 && slot <= 9) {
+            return slot + 31;
+        }
+        if (slot == 0) {
+            return 50;
+        }
         return slot;
     }
 
     @Override
     public FullContainerName getFullContainerName(final int slot) {
-        if (slot >= 32 && slot <= 40) return new FullContainerName(ContainerEnumName.CraftingInputContainer, null);
-        if (slot == 50) return new FullContainerName(ContainerEnumName.CraftingOutputPreviewContainer, null);
+        if (slot >= 32 && slot <= 40) {
+            return new FullContainerName(ContainerEnumName.CraftingInputContainer, null);
+        }
+        if (slot == 50) {
+            return new FullContainerName(ContainerEnumName.CraftingOutputPreviewContainer, null);
+        }
         return super.getFullContainerName(slot);
     }
+
 }

@@ -27,6 +27,18 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         }
     }
 
+    private static void validateStackCount(final int count) {
+        if (count < 1 || count > 64) {
+            throw new IllegalArgumentException("Inventory action count must be between 1 and 64: " + count);
+        }
+    }
+
+    private static void validateCraftCount(final int count) {
+        if (count < 1 || count > 255) {
+            throw new IllegalArgumentException("Craft count must fit a non-zero unsigned byte: " + count);
+        }
+    }
+
     public record Slot(FullContainerName container, int slot, int stackNetworkId) {
         public Slot {
             Objects.requireNonNull(container, "container");
@@ -195,15 +207,4 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
         }
     }
 
-    private static void validateStackCount(final int count) {
-        if (count < 1 || count > 64) {
-            throw new IllegalArgumentException("Inventory action count must be between 1 and 64: " + count);
-        }
-    }
-
-    private static void validateCraftCount(final int count) {
-        if (count < 1 || count > 255) {
-            throw new IllegalArgumentException("Craft count must fit a non-zero unsigned byte: " + count);
-        }
-    }
 }

@@ -19,11 +19,12 @@ package net.raphimc.viabedrock.protocol.types.model;
 
 import com.viaversion.viaversion.api.type.Type;
 import io.netty.buffer.ByteBuf;
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SharedTypes_persona_PieceType;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.persona_PieceType;
 import net.raphimc.viabedrock.protocol.model.SkinData;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
-import java.awt.*;
+import java.util.UUID;
+import java.util.Locale;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +38,7 @@ public class SkinType extends Type<SkinData> {
     }
 
     @Override
-    public SkinData read(ByteBuf buffer) {
+    public SkinData read(final ByteBuf buffer) {
         final String skinId = BedrockTypes.STRING.read(buffer);
         final String playFabId = BedrockTypes.STRING.read(buffer);
         final String skinResourcePatch = BedrockTypes.STRING.read(buffer);
@@ -64,14 +65,14 @@ public class SkinType extends Type<SkinData> {
         final String fullSkinId = BedrockTypes.STRING.read(buffer);
 
         final String armSize = buffer.readUnsignedByte() == 1 ? "Wide" : "Slim";
-        final String skinColor = new Color(buffer.readIntLE(), true).toString();
+        final String skinColor = String.format(Locale.ROOT, "#%08X", buffer.readIntLE());
 
         final int piecesLength = readArrayLength(buffer, "persona pieces");
         final List<SkinData.PersonaPieceData> personaPieces = new ArrayList<>(piecesLength);
         for (int i = 0; i < piecesLength; i++) {
             final String id = BedrockTypes.STRING.read(buffer);
             final int rawType = buffer.readIntLE();
-            final SharedTypes_persona_PieceType pieceType = SharedTypes_persona_PieceType.getByValue(rawType);
+            final persona_PieceType pieceType = persona_PieceType.getByValue(rawType);
             final String type = pieceType != null ? pieceType.name() : Integer.toString(rawType);
             final String packId = BedrockTypes.UUID.read(buffer).toString();
             final boolean defaultPiece = buffer.readBoolean();
@@ -85,7 +86,7 @@ public class SkinType extends Type<SkinData> {
             final String type = BedrockTypes.STRING.read(buffer);
             final List<String> colors = new ArrayList<>(4);
             for (int i2 = 0; i2 < 4; i2++) {
-                colors.add(new Color(buffer.readIntLE(), true).toString());
+                colors.add(String.format(Locale.ROOT, "#%08X", buffer.readIntLE()));
             }
             tintColors.add(new SkinData.PersonaPieceTintData(type, colors));
         }
@@ -112,19 +113,41 @@ public class SkinType extends Type<SkinData> {
         return length;
     }
 
+    private static void writeArrayLength(final ByteBuf buffer, final int length) {
+        if (length < 0 || length > MAX_SKIN_ARRAY_ENTRIES) {
+            throw new IllegalArgumentException("Invalid skin array length");
+        }
+        BedrockTypes.UNSIGNED_VAR_INT.write(buffer, length);
+    }
+
+    private static int color(final String value) {
+        if (value == null || !value.matches("#[0-9a-fA-F]{8}")) {
+            throw new IllegalArgumentException("Expected exact eight-digit skin color");
+        }
+        return (int) Long.parseLong(value.substring(1), 16);
+    }
+
+    private static int pieceType(final String value) {
+        try {
+            return persona_PieceType.valueOf(value).getValue();
+        } catch (final IllegalArgumentException unknownName) {
+            return Integer.parseInt(value);
+        }
+    }
+
     @Override
-    public void write(ByteBuf buffer, SkinData value) { // TODO: I havent bothered updating this as it isnt used
+    public void write(final ByteBuf buffer, final SkinData value) {
         BedrockTypes.STRING.write(buffer, value.skinId());
         BedrockTypes.STRING.write(buffer, value.playFabId());
         BedrockTypes.STRING.write(buffer, value.skinResourcePatch());
         BedrockTypes.IMAGE.write(buffer, value.skinData());
 
-        buffer.writeIntLE(value.animations().size());
+        writeArrayLength(buffer, value.animations().size());
         for (SkinData.AnimationData animation : value.animations()) {
             BedrockTypes.IMAGE.write(buffer, animation.image());
-            buffer.writeIntLE(animation.type());
+            BedrockTypes.UNSIGNED_VAR_INT.write(buffer, animation.type());
             buffer.writeFloatLE(animation.frames());
-            buffer.writeIntLE(animation.expression());
+            BedrockTypes.UNSIGNED_VAR_INT.write(buffer, animation.expression());
         }
 
         BedrockTypes.IMAGE.write(buffer, value.capeData());
@@ -133,24 +156,26 @@ public class SkinType extends Type<SkinData> {
         BedrockTypes.STRING.write(buffer, value.animationData());
         BedrockTypes.STRING.write(buffer, value.capeId());
         BedrockTypes.STRING.write(buffer, value.fullSkinId());
-        BedrockTypes.STRING.write(buffer, value.armSize());
-        BedrockTypes.STRING.write(buffer, value.skinColor());
+        buffer.writeByte("Wide".equalsIgnoreCase(value.armSize()) ? 1 : 0);
+        buffer.writeIntLE(color(value.skinColor()));
 
-        buffer.writeIntLE(value.personaPieces().size());
+        writeArrayLength(buffer, value.personaPieces().size());
         for (SkinData.PersonaPieceData piece : value.personaPieces()) {
             BedrockTypes.STRING.write(buffer, piece.id());
-            BedrockTypes.STRING.write(buffer, piece.type());
-            BedrockTypes.STRING.write(buffer, piece.packId());
+            buffer.writeIntLE(pieceType(piece.type()));
+            BedrockTypes.UUID.write(buffer, UUID.fromString(piece.packId()));
             buffer.writeBoolean(piece.defaultPiece());
             BedrockTypes.STRING.write(buffer, piece.productId());
         }
 
-        buffer.writeIntLE(value.tintColors().size());
+        writeArrayLength(buffer, value.tintColors().size());
         for (SkinData.PersonaPieceTintData tint : value.tintColors()) {
             BedrockTypes.STRING.write(buffer, tint.type());
-            buffer.writeIntLE(tint.colors().size());
+            if (tint.colors().size() != 4) {
+                throw new IllegalArgumentException("Persona tint requires exactly four colors");
+            }
             for (String color : tint.colors()) {
-                BedrockTypes.STRING.write(buffer, color);
+                buffer.writeIntLE(color(color));
             }
         }
 
@@ -159,6 +184,8 @@ public class SkinType extends Type<SkinData> {
         buffer.writeBoolean(value.capeOnClassic());
         buffer.writeBoolean(value.primaryUser());
         buffer.writeBoolean(value.overridingPlayerAppearance());
+        BedrockTypes.STRING.write(buffer, "false"); // unsigned local texture is never trusted
+        BedrockTypes.STRING.write(buffer, ""); // no signed profile hash
     }
 
 }
