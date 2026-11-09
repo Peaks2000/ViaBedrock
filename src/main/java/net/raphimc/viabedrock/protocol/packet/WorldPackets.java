@@ -17,7 +17,6 @@
  */
 package net.raphimc.viabedrock.protocol.packet;
 
-import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.SubChunkPacketPayload_HeightMapDataType;
 import com.viaversion.nbt.tag.CompoundTag;
 import com.viaversion.nbt.tag.Tag;
 import com.viaversion.viaversion.api.minecraft.*;
@@ -62,7 +61,6 @@ import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.blockentity.SignBlockEntityRewriter;
 import net.raphimc.viabedrock.protocol.storage.*;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
-import net.raphimc.viabedrock.protocol.types.array.ByteArrayType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -190,8 +188,8 @@ public final class WorldPackets {
             wrapper.write(Types.VAR_INT, dimension.ordinal()); // dimension id
             wrapper.write(Types.STRING, dimension.getKey()); // dimension name
             wrapper.write(Types.LONG, 0L); // hashed seed
-            wrapper.write(Types.BYTE, (byte) clientPlayer.javaGameMode().ordinal()); // game mode
-            wrapper.write(Types.BYTE, (byte) -1); // previous game mode
+            wrapper.write(Types.VAR_INT, clientPlayer.javaGameMode().ordinal()); // game mode
+            wrapper.write(Types.OPTIONAL_VAR_INT, null); // previous game mode
             wrapper.write(Types.BOOLEAN, false); // is debug
             wrapper.write(Types.BOOLEAN, gameSession.isFlatGenerator()); // is flat
             wrapper.write(Types.OPTIONAL_GLOBAL_POSITION, null); // last death position
@@ -305,8 +303,6 @@ public final class WorldPackets {
                         ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Error reading chunk data", e);
                     }
 
-                    // Requested subchunks may still be missing; the tracker queues the Java chunk
-                    // only after all required Bedrock sections have arrived.
                     chunkTracker.sendChunkInNextTick(chunkX, chunkZ);
                 } catch (final Throwable e) {
                     throw new RuntimeException("Error handling chunk data", e);
@@ -316,6 +312,7 @@ public final class WorldPackets {
             final boolean cachingEnabled = wrapper.read(Types.BOOLEAN); // caching enabled
             final Long[] blobs = wrapper.read(BedrockTypes.LONG_ARRAY); // blob ids (always present in 1.26.40)
             final byte[] data = wrapper.read(BedrockTypes.BYTE_ARRAY); // data
+            wrapper.read(Types.BOOLEAN); // biome update
             if (cachingEnabled) {
                 final int expectedLength = requestSubChunks ? 1 : sectionCount + 1;
                 if (blobs.length != expectedLength) {
@@ -351,20 +348,10 @@ public final class WorldPackets {
             final int count = wrapper.read(BedrockTypes.UNSIGNED_VAR_INT); // count
 
             for (int i = 0; i < count; i++) {
-                final BlockPosition offset = wrapper.read(BedrockTypes.SUB_CHUNK_OFFSET); // offset
-                final SubChunkPacketPayload_SubChunkRequestResult result = SubChunkPacketPayload_SubChunkRequestResult.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_SubChunkRequestResult.Undefined); // result
-                final byte[] data = wrapper.read(Types.BOOLEAN) ? wrapper.read(BedrockTypes.BYTE_ARRAY) : new byte[0]; // optional data
-                SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // heightmap result
-                if (wrapper.read(Types.BOOLEAN)) {
-                    wrapper.read(new ByteArrayType(272)); // optional heightmap data
-                }
-                SubChunkPacketPayload_HeightMapDataType.getByValue(wrapper.read(Types.BYTE), SubChunkPacketPayload_HeightMapDataType.NoData); // render heightmap result
-                if (wrapper.read(Types.BOOLEAN)) {
-                    wrapper.read(new ByteArrayType(272)); // optional render heightmap data
-                }
-                if (wrapper.read(Types.BOOLEAN)) {
-                    wrapper.read(BedrockTypes.LONG_LE); // blob id
-                }
+                final var entry = wrapper.read(BedrockTypes.SUB_CHUNK_ENTRY);
+                final BlockPosition offset = entry.offset();
+                final SubChunkPacketPayload_SubChunkRequestResult result = entry.result();
+                final byte[] data = entry.data();
 
                 final BlockPosition absolute = new BlockPosition(center.x() + offset.x(), center.y() + offset.y(), center.z() + offset.z());
                 final Consumer<byte[]> dataConsumer = combinedData -> {
@@ -403,13 +390,8 @@ public final class WorldPackets {
                     }
                 };
 
-                final boolean hasBlob = wrapper.read(Types.BOOLEAN); // optional blob id
-                if (hasBlob) {
-                    if (!cachingEnabled) {
-                        throw new IllegalStateException("Received sub chunk blob id while caching is disabled");
-                    }
-
-                    final long hash = wrapper.read(BedrockTypes.LONG_LE); // blob id
+                if (cachingEnabled && entry.blobId() != null) {
+                    final long hash = entry.blobId();
                     wrapper.user().get(BlobCache.class).getBlob(hash).thenAccept(blob -> {
                         if (data.length == 0) {
                             dataConsumer.accept(blob);
@@ -488,7 +470,7 @@ public final class WorldPackets {
             for (Map.Entry<BlockPosition, List<BlockChangeRecord>> entry : blockChanges.entrySet()) {
                 final BlockPosition chunkPosition = entry.getKey();
                 final List<BlockChangeRecord> changes = entry.getValue();
-                final long chunkKey = (chunkPosition.x() & 0x3FFFFFL) << 42 | (chunkPosition.z() & 0x3FFFFFL) << 20 | (chunkPosition.y() & 0xFFFL);
+                final long chunkKey = packSectionPosition(chunkPosition);
 
                 final PacketWrapper multiBlockChange = wrapper.create(ClientboundPackets26_3.SECTION_BLOCKS_UPDATE);
                 multiBlockChange.write(Types.LONG, chunkKey); // chunk position
@@ -610,6 +592,10 @@ public final class WorldPackets {
     private static boolean isSponge(final BlockStateRewriter blockStateRewriter, final int blockState) {
         final BlockState state = blockStateRewriter.blockState(blockState);
         return state != null && (state.identifier().equals("sponge") || state.identifier().equals("wet_sponge"));
+    }
+
+    static long packSectionPosition(final BlockPosition section) {
+        return (section.x() & 0x3FFFFFL) << 42 | (section.z() & 0x3FFFFFL) << 20 | (section.y() & 0xFFFFFL);
     }
 
     private WorldPackets() {

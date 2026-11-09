@@ -19,6 +19,9 @@ package net.raphimc.viabedrock.protocol.packet;
 
 import com.google.common.collect.Lists;
 import com.viaversion.nbt.tag.CompoundTag;
+import com.viaversion.nbt.tag.ListTag;
+import com.viaversion.nbt.tag.StringTag;
+import com.viaversion.nbt.tag.Tag;
 import com.viaversion.viaversion.api.minecraft.Holder;
 import com.viaversion.viaversion.api.minecraft.PaintingVariant;
 import com.viaversion.viaversion.api.minecraft.Vector3d;
@@ -37,6 +40,8 @@ import net.raphimc.viabedrock.api.model.entity.CustomEntity;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.model.entity.ItemEntity;
 import net.raphimc.viabedrock.api.model.entity.LivingEntity;
+import net.raphimc.viabedrock.api.model.entity.properties.EntityProperty;
+import net.raphimc.viabedrock.api.model.entity.properties.EntityPropertyList;
 import net.raphimc.viabedrock.api.resourcepack.definition.EntityDefinitions;
 import net.raphimc.viabedrock.api.util.MathUtil;
 import net.raphimc.viabedrock.api.util.PacketFactory;
@@ -59,6 +64,7 @@ import net.raphimc.viabedrock.protocol.model.EntityAttribute;
 import net.raphimc.viabedrock.protocol.model.EntityEffect;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
+import net.raphimc.viabedrock.protocol.storage.EntityPropertyTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
@@ -98,6 +104,7 @@ public final class EntityPackets {
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
             wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
             wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
+            wrapper.read(BedrockTypes.OPTIONAL_PASSENGER_OF_BLOCKS); // passenger of blocks
 
             final Entity entity;
             final EntityTypes26_3 javaEntityType = BedrockProtocol.MAPPINGS.getBedrockToJavaEntities().get(type);
@@ -508,7 +515,7 @@ public final class EntityPackets {
 
             final long entityRuntimeId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // entity runtime id
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
-            wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
+            final EntityProperties entityProperties = wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
             wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // tick
 
             final Entity entity = entityTracker.getEntityByRid(entityRuntimeId);
@@ -519,8 +526,56 @@ public final class EntityPackets {
 
             final List<EntityData> javaEntityData = new ArrayList<>();
             entity.updateEntityData(entityData, javaEntityData);
+            entity.translateEntityProperties(entityProperties, javaEntityData);
             wrapper.write(Types.VAR_INT, entity.javaId()); // entity id
             wrapper.write(VersionedTypes.V26_3.entityDataList, javaEntityData); // entity data
+        });
+        protocol.registerClientbound(ClientboundBedrockPackets.SYNC_ENTITY_PROPERTY, null, wrapper -> {
+            wrapper.cancel();
+            final Tag tag = wrapper.read(BedrockTypes.NETWORK_TAG);
+
+            final EntityPropertyTracker epTracker = wrapper.user().get(EntityPropertyTracker.class);
+
+            final String entityType = ((CompoundTag) tag).getString("type");
+            final List<EntityProperty> intEntityProperties = new ArrayList<>();
+            final List<EntityProperty.FloatProperty> floatEntityProperties = new ArrayList<>();
+
+            final ListTag<CompoundTag> properties = ((CompoundTag) tag).getListTag("properties", CompoundTag.class);
+            for (CompoundTag property : properties) {
+                final EntityProperty newProperty = switch (property.getInt("type")) {
+                    case 0 -> new EntityProperty.IntProperty(
+                        property.getString("name"),
+                        property.getInt("min"),
+                        property.getInt("max")
+                    );
+                    case 1 -> new EntityProperty.FloatProperty(
+                        property.getString("name"),
+                        property.getFloat("min"),
+                        property.getFloat("max")
+                    );
+                    case 2 -> new EntityProperty.BooleanProperty(
+                        property.getString("name")
+                    );
+                    case 3 -> new EntityProperty.EnumProperty(
+                        property.getString("name"),
+                        property.getListTag("enum", StringTag.class).stream().map(StringTag::getValue).toArray(String[]::new)
+                    );
+                    default -> {
+                        ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received entity property with unknown type: " + property.getInt("type"));
+                        yield null;
+                    }
+                };
+
+                if (newProperty != null) {
+                    if (newProperty instanceof EntityProperty.FloatProperty floatProperty) {
+                        floatEntityProperties.add(floatProperty);
+                    } else {
+                        intEntityProperties.add(newProperty);
+                    }
+                }
+            }
+
+            epTracker.addEntity(entityType, new EntityPropertyList(intEntityProperties, floatEntityProperties));
         });
         protocol.registerClientbound(ClientboundBedrockPackets.MOB_EFFECT, ClientboundPackets26_3.UPDATE_MOB_EFFECT, wrapper -> {
             final long entityRuntimeId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // entity runtime id
@@ -558,6 +613,7 @@ public final class EntityPackets {
             final long entityRuntimeId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // entity runtime id
             wrapper.read(BedrockTypes.FLOAT_LE); // data
             wrapper.read(BedrockTypes.OPTIONAL_STRING); // swing source
+            final HandSlot hand = HandSlot.getByValue(wrapper.read(Types.BYTE), HandSlot.Mainhand); // hand
 
             final Entity entity = wrapper.user().get(EntityTracker.class).getEntityByRid(entityRuntimeId);
             if (entity == null) {
@@ -570,7 +626,7 @@ public final class EntityPackets {
                 case NoAction -> wrapper.cancel();
                 case Swing -> {
                     wrapper.setPacketType(ClientboundPackets26_3.SWING_ANIMATION);
-                    wrapper.write(Types.VAR_INT, 0); // hand
+                    wrapper.write(Types.VAR_INT, hand.getValue()); // hand
                     wrapper.write(SwingAnimation.TYPE, DEFAULT_SWING_ANIMATION);
                 }
                 case WakeUp -> wrapper.write(Types.UNSIGNED_BYTE, (short) AnimateAction.WAKE_UP.ordinal()); // action

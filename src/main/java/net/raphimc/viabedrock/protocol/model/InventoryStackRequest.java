@@ -203,7 +203,7 @@ public record InventoryStackRequest(int requestId, List<Action> actions) {
 
         @Override
         public int mappedType() {
-            return 17;
+            return 18;
         }
     }
 

@@ -85,6 +85,7 @@ public final class OtherPlayerPackets {
             try {
                 abilities = wrapper.read(BedrockTypes.PLAYER_ABILITIES); // abilities
                 wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
+                wrapper.read(BedrockTypes.OPTIONAL_PASSENGER_OF_BLOCKS); // passenger of blocks
                 deviceId = wrapper.read(BedrockTypes.STRING); // device id
                 deviceOs = wrapper.read(BedrockTypes.INT_LE); // device os
             } catch (final Exception e) {

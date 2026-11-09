@@ -141,9 +141,9 @@ public final class WorldEffectPackets {
 
             wrapper.write(Types.SOUND_EVENT, Holder.of(javaSound.id())); // sound id
             wrapper.write(Types.VAR_INT, javaSound.category().ordinal()); // category
-            wrapper.write(Types.INT, position.x()); // x
-            wrapper.write(Types.INT, position.y()); // y
-            wrapper.write(Types.INT, position.z()); // z
+            wrapper.write(Types.INT, position.x() * 8); // x
+            wrapper.write(Types.INT, position.y() * 8); // y
+            wrapper.write(Types.INT, position.z() * 8); // z
             wrapper.write(Types.FLOAT, volume); // volume
             wrapper.write(Types.FLOAT, pitch); // pitch
             wrapper.write(Types.LONG, ThreadLocalRandom.current().nextLong()); // seed

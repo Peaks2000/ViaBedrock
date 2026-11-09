@@ -128,8 +128,8 @@ public final class ClientPlayerPackets {
                             wrapper.write(Types.VAR_INT, chunkTracker.getDimension().ordinal()); // dimension id
                             wrapper.write(Types.STRING, chunkTracker.getDimension().getKey()); // dimension name
                             wrapper.write(Types.LONG, 0L); // hashed seed
-                            wrapper.write(Types.BYTE, (byte) clientPlayer.javaGameMode().ordinal()); // game mode
-                            wrapper.write(Types.BYTE, (byte) -1); // previous game mode
+                            wrapper.write(Types.VAR_INT, clientPlayer.javaGameMode().ordinal()); // game mode
+                            wrapper.write(Types.OPTIONAL_VAR_INT, null); // previous game mode
                             wrapper.write(Types.BOOLEAN, false); // is debug
                             wrapper.write(Types.BOOLEAN, gameSession.isFlatGenerator()); // is flat
                             wrapper.write(Types.OPTIONAL_GLOBAL_POSITION, null); // last death position
@@ -314,6 +314,7 @@ public final class ClientPlayerPackets {
             wrapper.read(Types.VAR_INT); // data
 
             switch (action) {
+                case STOP_SLEEPING -> clientPlayer.sendPlayerActionPacketToServer(PlayerActionType.StopSleeping);
                 case START_SPRINTING -> {
                     clientPlayer.setSprinting(true);
                     clientPlayer.addAuthInputData(PlayerAuthInputData.StartSprinting);
@@ -358,7 +359,6 @@ public final class ClientPlayerPackets {
                     clientPlayer.cancelNextSwingPacket();
                     clientPlayer.setBlockBreakingInfo(new ClientPlayerEntity.BlockBreakingInfo(position, direction));
                     // TODO: Handle instant breaking
-                    // TODO: Handle creative mode mining
                     // TODO: Test breaking fire
                     // TODO: The java client keeps spamming swing packets while waiting for the block break cooldown. Those need to be cancelled
 
@@ -392,6 +392,10 @@ public final class ClientPlayerPackets {
 
                     chunkTracker.handleBlockChange(position, 0, chunkTracker.bedrockAirId());
                     PacketFactory.sendJavaBlockUpdate(wrapper.user(), position, ProtocolConstants.JAVA_AIR_ID);
+                }
+                case CHANGE_DESTROY_DIRECTION -> {
+                    clientPlayer.setBlockBreakingInfo(new ClientPlayerEntity.BlockBreakingInfo(position, direction));
+                    clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.ContinueDestroyBlock, position, direction.ordinal()));
                 }
                 case DROP_ALL_ITEMS, DROP_ITEM -> {
                     // TODO: Implement DROP_ALL_ITEMS, DROP_ITEM (Currently experimental)
@@ -431,6 +435,7 @@ public final class ClientPlayerPackets {
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
             wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorActionType.Attack.getValue()); // action type
             wrapper.write(BedrockTypes.VAR_INT, (int) inventoryContainer.getSelectedHotbarSlot()); // hotbar slot
+            wrapper.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
             wrapper.write(wrapper.user().get(ItemRewriter.class).newItemType(), inventoryContainer.getSelectedHotbarItem()); // held item
             wrapper.write(BedrockTypes.POSITION_3F, entityTracker.getClientPlayer().position()); // player position
             wrapper.write(BedrockTypes.POSITION_3F, Position3f.ZERO); // click position
@@ -462,6 +467,7 @@ public final class ClientPlayerPackets {
             wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, entity.runtimeId()); // entity runtime id
             wrapper.write(BedrockTypes.VAR_INT, ItemUseOnActorActionType.Interact.getValue()); // action type
             wrapper.write(BedrockTypes.VAR_INT, (int) inventoryContainer.getSelectedHotbarSlot()); // hotbar slot
+            wrapper.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
             wrapper.write(wrapper.user().get(ItemRewriter.class).newItemType(), inventoryContainer.getSelectedHotbarItem()); // held item
             wrapper.write(BedrockTypes.POSITION_3F, entityTracker.getClientPlayer().position()); // player position
             final Vector3d location = wrapper.read(Types.LOW_PRECISION_VECTOR); // location
@@ -725,7 +731,8 @@ public final class ClientPlayerPackets {
                 wrapper.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
                 wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
                 wrapper.write(BedrockTypes.FLOAT_LE, 0F); // data
-                wrapper.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source // TODO: 1.21.130
+                wrapper.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source
+                wrapper.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
             } else {
                 // Java animates the hand on every mining tick. Bedrock needs only the explicit
                 // start animation; forwarding the repeats echoes attack.nodamage after the break.

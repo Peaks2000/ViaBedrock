@@ -27,7 +27,13 @@ import net.raphimc.viabedrock.protocol.model.FullContainerName;
 public class HudContainer extends InventoryRedirectContainer {
 
     public HudContainer(final UserConnection user) {
-        super(user, (byte) ContainerID.CONTAINER_ID_PLAYER_ONLY_UI.getValue(), ContainerType.HUD, 54);
+        super(user, (byte) ContainerID.CONTAINER_ID_PLAYER_ONLY_UI.getValue(), ContainerType.HUD, 57);
+    }
+
+    @Override
+    public boolean setItems(final BedrockItem[] items) {
+        // Older protocol-2225 hosts omit the three trailing reserved HUD slots.
+        return super.setItems(items.length == 54 ? java.util.Arrays.copyOf(items, 57) : items);
     }
 
     @Override

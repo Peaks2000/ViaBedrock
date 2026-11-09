@@ -85,9 +85,10 @@ public final class HudPackets {
                     switch (action) {
                         case Add -> {
                             final UUID uuid = wrapper.read(BedrockTypes.UUID); // uuid
-                            final long entityUniqueId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // actorUniqueId
+                            final long entityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // actorUniqueId
                             final String name = wrapper.read(BedrockTypes.STRING); // name
                             final String xuid = wrapper.read(BedrockTypes.STRING); // xuid
+                            final String playFabId = wrapper.read(BedrockTypes.STRING); // skin PlayFab id
                             final String platformOnlineId = wrapper.read(BedrockTypes.STRING); // platform online id
                             final int deviceOs = wrapper.read(BedrockTypes.INT_LE); // device os
                             final SkinData skin = wrapper.read(BedrockTypes.SKIN); // skin
@@ -98,6 +99,7 @@ public final class HudPackets {
 
                             profiles.add(new GameProfile(name, uuid, new GameProfile.Property[]{
                                 new GameProfile.Property("xuid", xuid),
+                                new GameProfile.Property("playfab_id", playFabId),
                                 new GameProfile.Property("platform_online_id", platformOnlineId),
                                 new GameProfile.Property("device_os", String.valueOf(deviceOs)),
                                 new GameProfile.Property("is_teacher", String.valueOf(isTeacher)),
@@ -354,7 +356,7 @@ public final class HudPackets {
                 final Pair<ScoreboardObjective, ScoreboardEntry> entry = scoreboardTracker.getEntry(scoreboardId);
                 switch (action) {
                     case Update -> {
-                        final long entityUniqueId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // entity unique id
+                        final long entityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
                         if (entry == null) {
                             continue;
                         }
@@ -508,9 +510,10 @@ public final class HudPackets {
                 continue;
             }
 
-            final long entityUniqueId = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // entity unique id
+            final long entityUniqueId = wrapper.read(BedrockTypes.VAR_LONG); // entity unique id
             final String name = wrapper.read(BedrockTypes.STRING); // username
             wrapper.read(BedrockTypes.STRING); // xuid
+            wrapper.read(BedrockTypes.STRING); // skin PlayFab id
             wrapper.read(BedrockTypes.STRING); // platform chat id
             wrapper.read(BedrockTypes.INT_LE); // device OS
             final SkinData skin = wrapper.read(BedrockTypes.SKIN);

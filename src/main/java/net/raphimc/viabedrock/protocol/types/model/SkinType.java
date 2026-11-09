@@ -40,7 +40,6 @@ public class SkinType extends Type<SkinData> {
     @Override
     public SkinData read(final ByteBuf buffer) {
         final String skinId = BedrockTypes.STRING.read(buffer);
-        final String playFabId = BedrockTypes.STRING.read(buffer);
         final String skinResourcePatch = BedrockTypes.STRING.read(buffer);
         final BufferedImage skinData = BedrockTypes.IMAGE.read(buffer);
 
@@ -102,7 +101,7 @@ public class SkinType extends Type<SkinData> {
         BedrockTypes.STRING.read(buffer); // trusted flag
         BedrockTypes.STRING.read(buffer); // profile hash
 
-        return new SkinData(skinId, playFabId, skinResourcePatch, skinData, animations, capeData, geometryData, geometryDataEngineVersion, animationData, premium, persona, capeOnClassic, primaryUser, capeId, fullSkinId, armSize, skinColor, personaPieces, tintColors, overridingPlayerAppearance);
+        return new SkinData(skinId, skinResourcePatch, skinData, animations, capeData, geometryData, geometryDataEngineVersion, animationData, premium, persona, capeOnClassic, primaryUser, capeId, fullSkinId, armSize, skinColor, personaPieces, tintColors, overridingPlayerAppearance);
     }
 
     private static int readArrayLength(final ByteBuf buffer, final String field) {
@@ -138,7 +137,6 @@ public class SkinType extends Type<SkinData> {
     @Override
     public void write(final ByteBuf buffer, final SkinData value) {
         BedrockTypes.STRING.write(buffer, value.skinId());
-        BedrockTypes.STRING.write(buffer, value.playFabId());
         BedrockTypes.STRING.write(buffer, value.skinResourcePatch());
         BedrockTypes.IMAGE.write(buffer, value.skinData());
 
