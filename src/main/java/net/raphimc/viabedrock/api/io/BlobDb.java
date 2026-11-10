@@ -52,17 +52,11 @@ public class BlobDb implements Closeable {
             while (!Thread.interrupted()) {
                 try {
                     Thread.sleep(1000);
-                    final Set<Long> writtenKeys = new HashSet<>();
-                    for (Map.Entry<Long, byte[]> entry : this.pendingWrites.entrySet()) {
-                        try {
-                            this.putNow(entry.getKey(), entry.getValue());
-                            writtenKeys.add(entry.getKey());
-                        } catch (final Throwable e) {
-                            Via.getPlatform().getLogger().log(Level.SEVERE, "Failed to write pending blob", e);
-                            break;
-                        }
+                    try {
+                        this.flushPendingWrites();
+                    } catch (final Throwable e) {
+                        Via.getPlatform().getLogger().log(Level.SEVERE, "Failed to write pending blob", e);
                     }
-                    writtenKeys.forEach(this.pendingWrites::remove);
                 } catch (final InterruptedException e) {
                     break;
                 }
@@ -72,11 +66,11 @@ public class BlobDb implements Closeable {
     }
 
     public synchronized void save() throws IOException {
+        this.flushPendingWrites();
         if (!this.indexDirty) {
             return;
         }
 
-        this.waitForWrites();
         try (DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(this.indexFile)))) {
             dos.write(MAGIC);
             dos.writeInt(VERSION);
@@ -130,6 +124,19 @@ public class BlobDb implements Closeable {
         this.index.put(key, new IndexEntry(this.dataOffset, compressedValue.length));
         this.dataOffset += compressedValue.length;
         this.indexDirty = true;
+    }
+
+    private void flushPendingWrites() throws IOException {
+        for (final Long key : this.pendingWrites.keySet()) {
+            // Background writes release the lock between blobs; save holds it for the full flush.
+            synchronized (this) {
+                final byte[] value = this.pendingWrites.get(key);
+                if (value != null) {
+                    this.putNow(key, value);
+                    this.pendingWrites.remove(key);
+                }
+            }
+        }
     }
 
     public void waitForWrites() {
