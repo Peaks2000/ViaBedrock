@@ -35,6 +35,7 @@ import net.raphimc.viabedrock.api.util.EnumUtil;
 import net.raphimc.viabedrock.api.util.MathUtil;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
+import net.raphimc.viabedrock.protocol.PlayerActionPacketFactory;
 import net.raphimc.viabedrock.protocol.ClientboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
@@ -53,7 +54,6 @@ import net.raphimc.viabedrock.protocol.storage.*;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.EnumSet;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -355,7 +355,7 @@ public final class ClientPlayerPackets {
 
             switch (action) {
                 case START_DESTROY_BLOCK -> {
-                    clientPlayer.sendSwingPacketToServer();
+                    clientPlayer.sendSwingPacketToServer(ActorSwingSource.Mine);
                     clientPlayer.cancelNextSwingPacket();
                     clientPlayer.setBlockBreakingInfo(new ClientPlayerEntity.BlockBreakingInfo(position, direction));
                     // TODO: Handle instant breaking
@@ -728,11 +728,7 @@ public final class ClientPlayerPackets {
                 gameSession.isBlockBreakingServerAuthoritative()
             );
             if (swingHandling.forwardAnimation()) {
-                wrapper.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
-                wrapper.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
-                wrapper.write(BedrockTypes.FLOAT_LE, 0F); // data
-                wrapper.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source
-                wrapper.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
+                PlayerActionPacketFactory.writeSwing(wrapper, clientPlayer.runtimeId(), ActorSwingSource.Attack);
             } else {
                 // Java animates the hand on every mining tick. Bedrock needs only the explicit
                 // start animation; forwarding the repeats echoes attack.nodamage after the break.

@@ -224,12 +224,12 @@ public class ClientPlayerEntity extends PlayerEntity {
     }
 
     public void sendSwingPacketToServer() {
+        this.sendSwingPacketToServer(ActorSwingSource.Attack);
+    }
+
+    public void sendSwingPacketToServer(final ActorSwingSource source) {
         final PacketWrapper animate = PacketWrapper.create(ServerboundBedrockPackets.ANIMATE, this.user);
-        animate.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
-        animate.write(BedrockTypes.UNSIGNED_VAR_LONG, this.runtimeId); // entity runtime id
-        animate.write(BedrockTypes.FLOAT_LE, 0F); // data
-        animate.write(BedrockTypes.OPTIONAL_STRING, ActorSwingSource.Attack.name().toLowerCase(Locale.ROOT)); // swing source
-        animate.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
+        PlayerActionPacketFactory.writeSwing(animate, this.runtimeId, source);
         animate.sendToServer(BedrockProtocol.class);
     }
 

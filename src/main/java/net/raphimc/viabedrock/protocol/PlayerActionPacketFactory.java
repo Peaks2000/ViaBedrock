@@ -24,11 +24,24 @@ import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.protocols.v1_21_9to1_21_11.packet.ClientboundPackets1_21_11;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.InteractPacketPayload_Action;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.ActorSwingSource;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.AnimatePacketPayload_Action;
+import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.HandSlot;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.PlayerActionType;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
+import java.util.Locale;
+
 public final class PlayerActionPacketFactory {
+
+    public static void writeSwing(final PacketWrapper swing, final long entityRuntimeId, final ActorSwingSource source) {
+        swing.write(Types.UNSIGNED_BYTE, (short) AnimatePacketPayload_Action.Swing.getValue()); // action
+        swing.write(BedrockTypes.UNSIGNED_VAR_LONG, entityRuntimeId); // entity runtime id
+        swing.write(BedrockTypes.FLOAT_LE, 0F); // data
+        swing.write(BedrockTypes.OPTIONAL_STRING, source.name().toLowerCase(Locale.ROOT)); // swing source
+        swing.write(Types.BYTE, (byte) HandSlot.Mainhand.getValue()); // hand slot
+    }
 
     public static void sendBedrockPlayerAction(final UserConnection user, final long entityId, final PlayerActionType actionType, final BlockPosition position, final BlockPosition resultPosition, final int face) {
         final PacketWrapper startItemUseOn = PacketWrapper.create(ServerboundBedrockPackets.PLAYER_ACTION, user);

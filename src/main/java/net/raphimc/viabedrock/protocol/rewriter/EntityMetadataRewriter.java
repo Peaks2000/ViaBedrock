@@ -55,6 +55,9 @@ public final class EntityMetadataRewriter {
         switch (id) {
             case RESERVED_0, RESERVED_092 -> { // Entity flags mask
                 final Set<ActorFlags> bedrockFlags = entity.entityFlags();
+                final boolean isSkeleton = entity.javaType().isOrHasParent(EntityTypes26_3.ABSTRACT_SKELETON);
+                final boolean skeletonUsingItem = isSkeleton && (bedrockFlags.contains(ActorFlags.USINGITEM)
+                    || bedrockFlags.contains(ActorFlags.CHARGING));
                 byte javaBitMask = 0; // https://minecraft.wiki/w/Java_Edition_protocol/Entity_metadata#Entity
                 if (bedrockFlags.contains(ActorFlags.ONFIRE)) {
                     javaBitMask |= (1 << 0);
@@ -102,7 +105,14 @@ public final class EntityMetadataRewriter {
                         mobBitMask |= 0x01;
                     }
 
+                    if (isSkeleton && (skeletonUsingItem || bedrockFlags.contains(ActorFlags.FACING_TARGET_TO_RANGE_ATTACK))) {
+                        mobBitMask |= 0x04;
+                    }
                     javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.MOB_FLAGS), VersionedTypes.V26_3.entityDataTypes().byteType, mobBitMask));
+                    if (isSkeleton) {
+                        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.LIVING_ENTITY_FLAGS),
+                            VersionedTypes.V26_3.entityDataTypes().byteType, (byte) (skeletonUsingItem ? 1 : 0)));
+                    }
                 }
 
                 if (entity.javaType().is(EntityTypes26_3.GHAST)) {
@@ -221,8 +231,10 @@ public final class EntityMetadataRewriter {
                     final boolean charged = bedrockFlags.contains(ActorFlags.CHARGED);
                     javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.IS_POWERED), VersionedTypes.V26_3.entityDataTypes().booleanType, charged));
 
-                    final boolean ignited = bedrockFlags.contains(ActorFlags.IGNITED);
-                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.IS_IGNITED), VersionedTypes.V26_3.entityDataTypes().booleanType, ignited));
+                    // Bedrock IGNITED also covers reversible proximity swelling.
+                    final int swellDirection = bedrockFlags.contains(ActorFlags.IGNITED) ? 1 : -1;
+                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SWELL_DIR), VersionedTypes.V26_3.entityDataTypes().varIntType, swellDirection));
+                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.IS_IGNITED), VersionedTypes.V26_3.entityDataTypes().booleanType, false));
                 }
 
                 if (entity.javaType().is(EntityTypes26_3.SPIDER)) {
