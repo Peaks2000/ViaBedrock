@@ -71,6 +71,7 @@ import net.raphimc.viabedrock.api.model.container.player.InventoryContainer;
 import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.api.util.TextUtil;
+import net.raphimc.viabedrock.protocol.rewriter.FormText;
 import net.raphimc.viabedrock.protocol.model.inventory.BedrockInventoryTransaction;
 import net.raphimc.viabedrock.protocol.model.inventory.InventoryActionData;
 import net.raphimc.viabedrock.protocol.rewriter.InventoryTransactionRewriter;
@@ -104,7 +105,7 @@ import java.util.logging.Level;
 
 public final class InventoryPackets {
 
-    private static final int DIALOG_BUTTON_WIDTH = 200;
+    private static final int DIALOG_BUTTON_WIDTH = 280;
     private static final int DIALOG_FAKE_BUTTON_WIDTH = 300;
     private static final String DIALOG_FAKE_BUTTON_TEXT = "This is not actually a button, but has to be one because dialogs don't support adding text only elements. Clicking it has the same effect as closing the dialog.";
 
@@ -614,9 +615,11 @@ public final class InventoryPackets {
             exitButtonAdditions.putBoolean("exit", true);
             final ActionButton exitButton = new ActionButton(new StringComponent(resourcePackStorage.getTexts().get("gui.close")), DIALOG_BUTTON_WIDTH, new CustomAllAction(responseIdentifier, exitButtonAdditions));
 
+            final boolean cubeCraftSelector = form instanceof ActionForm && FormText.isCubeCraftSelector(resourcePackStorage, form.getTitle());
+            final TextComponent title = TextUtil.stringToTextComponent(cubeCraftSelector ? FormText.selectorTitle(form.getTitle()) : form.getTitle());
             final Dialog dialog;
             if (form instanceof ModalForm modalForm) {
-                final MultiActionDialog actionDialog = new MultiActionDialog(TextUtil.stringToTextComponent(form.getTitle()), true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
+                final MultiActionDialog actionDialog = new MultiActionDialog(title, true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
                 addTextToDialog(wrapper.user(), actionDialog, modalForm.getText());
                 final CompoundTag button1Additions = new CompoundTag();
                 button1Additions.putInt("button_id", 0);
@@ -627,11 +630,11 @@ public final class InventoryPackets {
                 dialog = actionDialog;
             } else if (form instanceof ActionForm actionForm) {
                 if (actionForm.getElements().length == 0) { // Text only form
-                    final NoticeDialog noticeDialog = new NoticeDialog(TextUtil.stringToTextComponent(form.getTitle()), true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), exitButton);
+                    final NoticeDialog noticeDialog = new NoticeDialog(title, true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), exitButton);
                     addTextToDialog(wrapper.user(), noticeDialog, actionForm.getText());
                     dialog = noticeDialog;
                 } else {
-                    final MultiActionDialog actionDialog = new MultiActionDialog(TextUtil.stringToTextComponent(form.getTitle()), true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
+                    final MultiActionDialog actionDialog = new MultiActionDialog(title, true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
                     addTextToDialog(wrapper.user(), actionDialog, actionForm.getText());
                     int buttonIndex = 0;
                     for (int elementIndex = 0; elementIndex < actionForm.getElements().length; elementIndex++) {
@@ -639,7 +642,11 @@ public final class InventoryPackets {
                         if (element instanceof ButtonFormElement button) {
                             final CompoundTag buttonAdditions = new CompoundTag();
                             buttonAdditions.putInt("button_id", buttonIndex);
-                            actionDialog.getActions().add(new ActionButton(TextUtil.stringToTextComponent(button.getText()), DIALOG_BUTTON_WIDTH, new CustomAllAction(responseIdentifier, buttonAdditions)));
+                            final String label = cubeCraftSelector ? FormText.selectorButton(button.getText()) : button.getText();
+                            final TextComponent buttonText = TextUtil.stringToTextComponent(label);
+                            actionDialog.getActions().add(new ActionButton(
+                                TextUtil.stringToTextComponent(label.replace("\n", " · ")), buttonText,
+                                DIALOG_BUTTON_WIDTH, new CustomAllAction(responseIdentifier, buttonAdditions)));
                             buttonIndex++;
                         } else if (element instanceof HeaderFormElement header) {
                             actionDialog.getActions().add(new ActionButton(TextUtil.stringToTextComponent(header.getText()), new StringComponent(DIALOG_FAKE_BUTTON_TEXT), DIALOG_FAKE_BUTTON_WIDTH, exitButton.getAction()));
@@ -654,7 +661,7 @@ public final class InventoryPackets {
                     dialog = actionDialog;
                 }
             } else if (form instanceof CustomForm customForm) {
-                final MultiActionDialog actionDialog = new MultiActionDialog(TextUtil.stringToTextComponent(form.getTitle()), true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
+                final MultiActionDialog actionDialog = new MultiActionDialog(title, true, false, AfterAction.CLOSE, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), exitButton, 1);
                 for (int elementIndex = 0; elementIndex < customForm.getElements().length; elementIndex++) {
                     final FormElement element = customForm.getElements()[elementIndex];
                     final String inputKey = String.valueOf(elementIndex);

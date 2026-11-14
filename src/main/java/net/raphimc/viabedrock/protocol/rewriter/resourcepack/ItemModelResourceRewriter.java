@@ -72,9 +72,14 @@ public abstract class ItemModelResourceRewriter implements ResourcePackRewriter.
             }
 
             final JsonObject model = new JsonObject();
-            model.addProperty("type", "minecraft:select");
-            model.addProperty("property", "minecraft:custom_model_data");
-            model.add("cases", modelCases);
+            if (modelCases.isEmpty()) {
+                // Java rejects select models with no cases.
+                model.addProperty("type", "minecraft:empty");
+            } else {
+                model.addProperty("type", "minecraft:select");
+                model.addProperty("property", "minecraft:custom_model_data");
+                model.add("cases", modelCases);
+            }
             final JsonObject itemDefinitionObj = new JsonObject();
             itemDefinitionObj.add("model", model);
             this.putJson("assets/viabedrock/items/" + this.itemPath + ".json", itemDefinitionObj);

@@ -32,6 +32,7 @@ import net.raphimc.viabedrock.api.model.entity.Entity;
 import net.raphimc.viabedrock.api.model.entity.LivingEntity;
 import net.raphimc.viabedrock.api.model.entity.properties.EntityProperty;
 import net.raphimc.viabedrock.api.model.entity.properties.EntityPropertyList;
+import net.raphimc.viabedrock.api.util.TextUtil;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorDataIds;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorFlags;
@@ -58,33 +59,13 @@ public final class EntityMetadataRewriter {
                 final boolean isSkeleton = entity.javaType().isOrHasParent(EntityTypes26_3.ABSTRACT_SKELETON);
                 final boolean skeletonUsingItem = isSkeleton && (bedrockFlags.contains(ActorFlags.USINGITEM)
                     || bedrockFlags.contains(ActorFlags.CHARGING));
-                byte javaBitMask = 0; // https://minecraft.wiki/w/Java_Edition_protocol/Entity_metadata#Entity
-                if (bedrockFlags.contains(ActorFlags.ONFIRE)) {
-                    javaBitMask |= (1 << 0);
-                }
-                if (bedrockFlags.contains(ActorFlags.SNEAKING)) {
-                    javaBitMask |= (1 << 1);
-                }
-                if (bedrockFlags.contains(ActorFlags.RIDING)) {
-                    javaBitMask |= (1 << 2);
-                }
-                if (bedrockFlags.contains(ActorFlags.SPRINTING)) {
-                    javaBitMask |= (1 << 3);
-                }
-                if (bedrockFlags.contains(ActorFlags.SWIMMING)) {
-                    javaBitMask |= (1 << 4);
-                }
-                if (bedrockFlags.contains(ActorFlags.INVISIBLE)) {
-                    javaBitMask |= (1 << 5);
-                }
-                if (bedrockFlags.contains(ActorFlags.GLIDING)) {
-                    javaBitMask |= (byte) (1 << 7);
-                }
-
-                javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SHARED_FLAGS), VersionedTypes.V26_3.entityDataTypes().byteType, javaBitMask));
+                addSharedFlags(entity, bedrockFlags, javaEntityData);
 
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SILENT), VersionedTypes.V26_3.entityDataTypes().booleanType, bedrockFlags.contains(ActorFlags.SILENT)));
                 javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.NO_GRAVITY), VersionedTypes.V26_3.entityDataTypes().booleanType, !bedrockFlags.contains(ActorFlags.HAS_GRAVITY)));
+                if (id == ActorDataIds.RESERVED_0 && !entity.javaType().is(EntityTypes26_3.PLAYER)) {
+                    addNameVisibility(entity, javaEntityData);
+                }
 
                 if (entity.javaType().is(EntityTypes26_3.END_CRYSTAL)) {
                     final boolean showBottom = bedrockFlags.contains(ActorFlags.SHOW_BOTTOM);
@@ -741,16 +722,42 @@ public final class EntityMetadataRewriter {
             case RESERVED_038 -> { // SCALE
                 final float scale = readNumber(entityData).floatValue();
 
-                // TODO: Armor stands might have special handling
-
-                if (entity.javaType().isOrHasParent(EntityTypes26_3.LIVING_ENTITY) && scale != 0f) {
+                if (entity.javaType().is(EntityTypes26_3.ARMOR_STAND)) {
+                    // Java clamps scale above zero. Hide the model while retaining its nameplate.
+                    addSharedFlags(entity, entity.entityFlags(), javaEntityData);
+                }
+                if (entity.javaType().isOrHasParent(EntityTypes26_3.LIVING_ENTITY) && scale != 0F) {
                     final LivingEntity livingEntity = (LivingEntity) entity;
 
                     livingEntity.updateAttributes(new EntityAttribute[]{new EntityAttribute("minecraft:scale", scale, (float) 1 / 16, 16)});
                 }
             }
-            case RESERVED_053 -> { } // BOUNDING_BOX_WIDTH
-            case RESERVED_054 -> { } // BOUNDING_BOX_HEIGHT
+            case NAME -> {
+                if (!entity.javaType().is(EntityTypes26_3.PLAYER)) {
+                    final String name = entityData.value();
+                    javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.CUSTOM_NAME),
+                        VersionedTypes.V26_3.entityDataTypes().optionalComponentType,
+                        name.isEmpty() ? null : TextUtil.stringToNbt(name)));
+                    if (entity.javaType().is(EntityTypes26_3.ARMOR_STAND)) {
+                        addNameVisibility(entity, javaEntityData);
+                    }
+                }
+            }
+            case NAMETAG_ALWAYS_SHOW -> {
+                if (!entity.javaType().is(EntityTypes26_3.PLAYER)) {
+                    addNameVisibility(entity, javaEntityData);
+                }
+            }
+            case RESERVED_053, RESERVED_054 -> { // Bedrock bounding box width and height
+                if (entity.javaType().is(EntityTypes26_3.INTERACTION)) {
+                    final float size = readNumber(entityData).floatValue();
+                    if (Float.isFinite(size) && size >= 0F) {
+                        final String field = id == ActorDataIds.RESERVED_053 ? EntityDataFields.WIDTH : EntityDataFields.HEIGHT;
+                        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(field),
+                            VersionedTypes.V26_3.entityDataTypes().floatType, size));
+                    }
+                }
+            }
             case AGENT, BALLOON_ANCHOR -> {
             } // Education edition only, ignore
             default -> {
@@ -759,6 +766,51 @@ public final class EntityMetadataRewriter {
         }
 
         return true;
+    }
+
+    private static void addSharedFlags(final Entity entity, final Set<ActorFlags> bedrockFlags, final List<EntityData> javaEntityData) {
+        byte javaBitMask = 0; // https://minecraft.wiki/w/Java_Edition_protocol/Entity_metadata#Entity
+        if (bedrockFlags.contains(ActorFlags.ONFIRE)) {
+            javaBitMask |= (1 << 0);
+        }
+        if (bedrockFlags.contains(ActorFlags.SNEAKING)) {
+            javaBitMask |= (1 << 1);
+        }
+        if (bedrockFlags.contains(ActorFlags.RIDING)) {
+            javaBitMask |= (1 << 2);
+        }
+        if (bedrockFlags.contains(ActorFlags.SPRINTING)) {
+            javaBitMask |= (1 << 3);
+        }
+        if (bedrockFlags.contains(ActorFlags.SWIMMING)) {
+            javaBitMask |= (1 << 4);
+        }
+        if (bedrockFlags.contains(ActorFlags.INVISIBLE) || isZeroScaleArmorStand(entity)) {
+            javaBitMask |= (1 << 5);
+        }
+        if (bedrockFlags.contains(ActorFlags.GLIDING)) {
+            javaBitMask |= (byte) (1 << 7);
+        }
+        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SHARED_FLAGS),
+            VersionedTypes.V26_3.entityDataTypes().byteType, javaBitMask));
+    }
+
+    private static boolean isZeroScaleArmorStand(final Entity entity) {
+        final EntityData scale = entity.entityData().get(ActorDataIds.RESERVED_038);
+        return entity.javaType().is(EntityTypes26_3.ARMOR_STAND) && scale != null && readNumber(scale).floatValue() == 0F;
+    }
+
+    private static void addNameVisibility(final Entity entity, final List<EntityData> javaEntityData) {
+        final EntityData alwaysShow = entity.entityData().get(ActorDataIds.NAMETAG_ALWAYS_SHOW);
+        final boolean alwaysVisible = alwaysShow != null
+            ? readNumber(alwaysShow).byteValue() != 0
+            : entity.entityFlags().contains(ActorFlags.ALWAYS_SHOW_NAME);
+        final EntityData name = entity.entityData().get(ActorDataIds.NAME);
+        // Java otherwise shows the default "Armor Stand" label for a nameless stand.
+        final boolean visible = alwaysVisible && (!entity.javaType().is(EntityTypes26_3.ARMOR_STAND)
+            || name != null && !name.<String>value().isEmpty());
+        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.CUSTOM_NAME_VISIBLE),
+            VersionedTypes.V26_3.entityDataTypes().booleanType, visible));
     }
 
     public static void rewriteProperties(final UserConnection user, final Entity entity, final EntityProperties properties, final List<EntityData> javaEntityData) {
