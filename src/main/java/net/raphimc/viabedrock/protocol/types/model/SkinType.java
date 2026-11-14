@@ -22,6 +22,7 @@ import io.netty.buffer.ByteBuf;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.generated.persona_PieceType;
 import net.raphimc.viabedrock.protocol.model.SkinData;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
+import net.raphimc.viabedrock.protocol.types.primitive.ImageType;
 
 import java.util.UUID;
 import java.util.Locale;
@@ -31,6 +32,7 @@ import java.util.List;
 
 public class SkinType extends Type<SkinData> {
 
+    private static final ImageType SKIN_IMAGE = new ImageType(2048);
     private static final int MAX_SKIN_ARRAY_ENTRIES = 4_096;
 
     public SkinType() {
@@ -41,7 +43,7 @@ public class SkinType extends Type<SkinData> {
     public SkinData read(final ByteBuf buffer) {
         final String skinId = BedrockTypes.STRING.read(buffer);
         final String skinResourcePatch = BedrockTypes.STRING.read(buffer);
-        final BufferedImage skinData = BedrockTypes.IMAGE.read(buffer);
+        final BufferedImage skinData = SKIN_IMAGE.read(buffer);
 
         // Protocol 2168 uses unsigned-varint array lengths and enum values here. Reading the
         // former fixed-width layout shifts the cursor into creator-skin pixels and eventually
@@ -49,14 +51,14 @@ public class SkinType extends Type<SkinData> {
         final int animationCount = readArrayLength(buffer, "skin animations");
         final List<SkinData.AnimationData> animations = new ArrayList<>(animationCount);
         for (int i = 0; i < animationCount; i++) {
-            final BufferedImage image = BedrockTypes.IMAGE.read(buffer);
+            final BufferedImage image = SKIN_IMAGE.read(buffer);
             final int type = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
             final float frames = buffer.readFloatLE();
             final int expression = BedrockTypes.UNSIGNED_VAR_INT.read(buffer);
             animations.add(new SkinData.AnimationData(image, type, frames, expression));
         }
 
-        final BufferedImage capeData = BedrockTypes.IMAGE.read(buffer);
+        final BufferedImage capeData = SKIN_IMAGE.read(buffer);
         final String geometryData = BedrockTypes.STRING.read(buffer);
         final String geometryDataEngineVersion = BedrockTypes.STRING.read(buffer);
         final String animationData = BedrockTypes.STRING.read(buffer);

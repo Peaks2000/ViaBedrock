@@ -25,19 +25,32 @@ import java.awt.image.BufferedImage;
 
 public class ImageType extends Type<BufferedImage> {
 
+    private final int maxDimension;
+
     public ImageType() {
+        this(Integer.MAX_VALUE);
+    }
+
+    public ImageType(final int maxDimension) {
         super(BufferedImage.class);
+        this.maxDimension = maxDimension;
     }
 
     @Override
     public BufferedImage read(final ByteBuf buffer) {
         final int width = buffer.readIntLE();
         final int height = buffer.readIntLE();
-        final byte[] data = BedrockTypes.BYTE_ARRAY.read(buffer);
-
-        if (width <= 0 || height <= 0 || data.length == 0 || data.length != width * height * 4) {
+        final int length = BedrockTypes.UNSIGNED_VAR_INT.readPrimitive(buffer);
+        if (length < 0 || length > buffer.readableBytes()) {
+            throw new IllegalArgumentException("Invalid image byte length: " + Integer.toUnsignedString(length));
+        }
+        if (width <= 0 || height <= 0 || width > this.maxDimension || height > this.maxDimension
+            || (long) width * height != length / 4 || length % 4 != 0) {
+            buffer.skipBytes(length);
             return null;
         }
+        final byte[] data = new byte[length];
+        buffer.readBytes(data);
 
         final BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < height; y++) {

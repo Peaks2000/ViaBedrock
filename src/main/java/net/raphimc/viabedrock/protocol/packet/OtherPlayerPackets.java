@@ -221,10 +221,20 @@ public final class OtherPlayerPackets {
         });
         protocol.registerClientbound(ClientboundBedrockPackets.PLAYER_SKIN, null, wrapper -> {
             wrapper.cancel();
-            final UUID uuid = wrapper.read(BedrockTypes.UUID); // uuid
-            final SkinData skin = wrapper.read(BedrockTypes.SKIN); // skin
-            wrapper.read(BedrockTypes.STRING); // new skin name
-            wrapper.read(BedrockTypes.STRING); // old skin name
+            final UUID uuid;
+            final SkinData skin;
+            try {
+                uuid = wrapper.read(BedrockTypes.UUID);
+                skin = wrapper.read(BedrockTypes.SKIN);
+                wrapper.read(BedrockTypes.STRING); // new skin name
+                wrapper.read(BedrockTypes.STRING); // old skin name
+            } catch (final Exception e) {
+                // A malformed cosmetic update must not disconnect the player or replace their skin.
+                ViaBedrock.getPlatform().getLogger().log(java.util.logging.Level.FINE,
+                    "Could not decode Bedrock live skin update: " + e.getClass().getSimpleName());
+                wrapper.clearPacket();
+                return;
+            }
 
             Via.getManager().getProviders().get(SkinProvider.class).setSkin(wrapper.user(), uuid, skin);
         });
