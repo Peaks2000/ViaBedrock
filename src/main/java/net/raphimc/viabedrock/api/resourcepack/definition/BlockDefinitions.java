@@ -45,7 +45,9 @@ public class BlockDefinitions {
                         }
                         final JsonObject block = entry.getValue().getAsJsonObject();
                         final String sound = block.has("sound") ? block.get("sound").getAsString() : null;
-                        this.blocks.put(Key.namespaced(entry.getKey()), new BlockDefinition(Key.namespaced(entry.getKey()), sound));
+                        final String identifier = Key.namespaced(entry.getKey());
+                        this.blocks.put(identifier, new BlockDefinition(identifier, sound,
+                            textureFaces(block.get("textures")), textureFaces(block.get("carried_textures"))));
                     }
                 } catch (final Throwable e) {
                     ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to parse blocks.json in pack " + pack.key(), e);
@@ -62,7 +64,24 @@ public class BlockDefinitions {
         return Collections.unmodifiableMap(this.blocks);
     }
 
-    public record BlockDefinition(String identifier, String sound) {
+    private static Map<String, String> textureFaces(final JsonElement textures) {
+        if (textures == null || textures.isJsonNull()) return Map.of();
+        if (textures.isJsonPrimitive() && textures.getAsJsonPrimitive().isString()) {
+            return Map.of("*", textures.getAsString());
+        }
+        final Map<String, String> faces = new HashMap<>();
+        if (textures.isJsonObject()) {
+            textures.getAsJsonObject().entrySet().forEach(entry -> {
+                if (entry.getValue().isJsonPrimitive() && entry.getValue().getAsJsonPrimitive().isString()) {
+                    faces.put(entry.getKey(), entry.getValue().getAsString());
+                }
+            });
+        }
+        return Map.copyOf(faces);
+    }
+
+    public record BlockDefinition(String identifier, String sound, Map<String, String> textures,
+                                  Map<String, String> carriedTextures) {
     }
 
 }

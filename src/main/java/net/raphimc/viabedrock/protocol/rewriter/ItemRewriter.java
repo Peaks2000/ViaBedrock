@@ -50,6 +50,7 @@ import net.raphimc.viabedrock.protocol.model.ItemEntry;
 import net.raphimc.viabedrock.protocol.rewriter.item.BundleItemRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomAttachableResourceRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomItemTextureResourceRewriter;
+import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomBlockResourceRewriter;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import net.raphimc.viabedrock.protocol.types.array.ArrayType;
@@ -187,11 +188,15 @@ public class ItemRewriter extends StoredObject {
         } else {
             final ResourcePackStorage resourcePackStorage = this.user().get(ResourcePackStorage.class);
             final ItemDefinitions.ItemDefinition itemDefinition = resourcePackStorage.getItems().get(identifier);
+            final var networkBlockItem = resourcePackStorage.customBlockItem(identifier);
+            final boolean isBlock = networkBlockItem != null || resourcePackStorage.getBlocks().get(identifier) != null;
             final StructuredDataContainer data = ProtocolConstants.createStructuredDataContainer();
 
             if (itemDefinition != null) {
                 if (itemDefinition.displayNameComponent() != null) {
                     data.set(StructuredDataKey.ITEM_NAME, TextUtil.stringToNbt(resourcePackStorage.getTexts().translate(itemDefinition.displayNameComponent())));
+                } else if (isBlock) {
+                    data.set(StructuredDataKey.ITEM_NAME, customBlockName(resourcePackStorage, identifier));
                 } else if (this.componentItems.contains(identifier)) {
                     data.set(StructuredDataKey.ITEM_NAME, TextUtil.stringToNbt(resourcePackStorage.getTexts().get("item." + Key.stripMinecraftNamespace(identifier))));
                 } else {
@@ -201,15 +206,27 @@ public class ItemRewriter extends StoredObject {
                 if (resourcePackStorage.getAttachables().attachables().containsKey(identifier) && resourcePackStorage.isLoadedOnJavaClient() && resourcePackStorage.getConverterData().containsKey("ca_" + identifier + "_default")) {
                     data.set(StructuredDataKey.ITEM_MODEL, CustomAttachableResourceRewriter.getItemModel(identifier));
                     data.set(StructuredDataKey.CUSTOM_MODEL_DATA1_21_4, CustomAttachableResourceRewriter.getCustomModelData("default"));
-                } else if (itemDefinition.iconComponent() != null && resourcePackStorage.isLoadedOnJavaClient()) {
+                } else if (itemDefinition.iconComponent() != null && resourcePackStorage.isLoadedOnJavaClient()
+                        && resourcePackStorage.getTextures().itemTextures().containsKey(itemDefinition.iconComponent())) {
                     data.set(StructuredDataKey.ITEM_MODEL, CustomItemTextureResourceRewriter.getItemModel(itemDefinition.iconComponent()));
                     data.set(StructuredDataKey.CUSTOM_MODEL_DATA1_21_4, CustomItemTextureResourceRewriter.getCustomModelData("0"));
-                } else {
+                } else if (!isBlock) {
                     data.set(StructuredDataKey.LORE, new Tag[]{TextUtil.stringToNbt("§7[ViaBedrock] Custom item: " + identifier)});
                 }
+            } else if (isBlock) {
+                data.set(StructuredDataKey.ITEM_NAME, customBlockName(resourcePackStorage, identifier));
             } else {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Missing bedrock -> java item mapping for " + identifier);
                 data.set(StructuredDataKey.ITEM_NAME, TextUtil.stringToNbt("§cMissing item: " + identifier));
+            }
+            if (isBlock && data.get(StructuredDataKey.ITEM_MODEL) == null) {
+                if (CustomBlockResourceRewriter.hasModel(resourcePackStorage, identifier, "carried")) {
+                    data.set(StructuredDataKey.ITEM_MODEL, CustomBlockResourceRewriter.getItemModel(identifier));
+                    data.set(StructuredDataKey.CUSTOM_MODEL_DATA1_21_4, CustomBlockResourceRewriter.getCustomModelData("carried"));
+                } else if (networkBlockItem != null) {
+                    data.set(StructuredDataKey.ITEM_MODEL, CustomBlockResourceRewriter.getNetworkItemModel(identifier));
+                    data.set(StructuredDataKey.CUSTOM_MODEL_DATA1_21_4, CustomBlockResourceRewriter.getCustomModelData(networkBlockItem.variant()));
+                }
             }
             javaItem = new StructuredItem(BedrockProtocol.MAPPINGS.getJavaItems().get("minecraft:paper"), bedrockItem.amount(), data);
         }
@@ -231,6 +248,12 @@ public class ItemRewriter extends StoredObject {
         }
 
         return javaItem;
+    }
+
+    private static Tag customBlockName(final ResourcePackStorage packs, final String identifier) {
+        final String key = "tile." + identifier + ".name";
+        final String name = packs.getTexts().get(key);
+        return TextUtil.stringToNbt(name.equals(key) ? identifier : name);
     }
 
     public CompoundTag javaItem(final CompoundTag bedrockTag) {

@@ -215,8 +215,17 @@ public final class ResourcePackPackets {
         });
 
         protocol.registerServerboundTransition(ServerboundConfigurationPackets1_21_9.RESOURCE_PACK, ServerboundBedrockPackets.RESOURCE_PACK_CLIENT_RESPONSE, wrapper -> {
-            wrapper.read(Types.UUID); // id
+            final UUID id = wrapper.read(Types.UUID); // id
             final ResourcePackAction action = ResourcePackAction.values()[wrapper.read(Types.VAR_INT)]; // action
+            final ResourcePackStorage blockPacks = wrapper.user().get(ResourcePackStorage.class);
+            if (blockPacks != null && blockPacks.isBlockPack(id)) {
+                wrapper.cancel();
+                switch (action) {
+                    case ACCEPTED, DOWNLOADED -> { }
+                    default -> blockPacks.finishBlockPack(action == ResourcePackAction.SUCCESSFULLY_LOADED);
+                }
+                return;
+            }
             switch (action) {
                 case SUCCESSFULLY_LOADED, FAILED_DOWNLOAD, FAILED_RELOAD, DISCARDED -> {
                     final ResourcePackStorage storage = wrapper.user().get(ResourcePackStorage.class);

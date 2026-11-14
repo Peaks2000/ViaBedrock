@@ -217,6 +217,12 @@ public class BedrockProtocol extends StatelessTransitionProtocol<ClientboundBedr
                 wrapper.user().getProtocolInfo().setServerState(State.CONFIGURATION);
                 serverState = State.CONFIGURATION;
             }
+            final ResourcePackStorage packs = wrapper.user().get(ResourcePackStorage.class);
+            if (serverState == State.CONFIGURATION && packs != null && packs.isWaitingForBlockPack()
+                && (!BEFORE_PLAY_STATE_WHITELIST.contains(packet) || packet == ClientboundBedrockPackets.PLAY_STATUS)) {
+                wrapper.user().get(PrePlayPacketQueue.class).enqueue(packet, ((PacketWrapperImpl) wrapper).getInputBuffer());
+                throw CancelException.generate();
+            }
             if (serverState != State.PLAY && !BEFORE_PLAY_STATE_WHITELIST.contains(packet)) { // Bedrock client ignores most packets before receiving the START_GAME packet
                 if (serverState == State.CONFIGURATION && PRE_PLAY_STATE_QUEUE.contains(packet)) {
                     final ByteBuf input = ((PacketWrapperImpl) wrapper).getInputBuffer();

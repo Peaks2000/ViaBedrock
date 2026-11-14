@@ -17,7 +17,15 @@
  */
 package net.raphimc.viabedrock.protocol.rewriter;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.lenni0451.mcstructs_bedrock.text.components.TranslationBedrockComponent;
+import net.lenni0451.mcstructs_bedrock.text.serializer.BedrockComponentSerializer;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
+
+import java.util.Set;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,6 +37,47 @@ public final class FormText {
     private static final Pattern SELECTOR_MARKER = Pattern.compile(
         "&selector_(?:favourite_empty|favourite_selected|featured|hub|passes|profile|settings)(?![a-zA-Z0-9_])");
     private static final Pattern SELECTOR_PADDING = Pattern.compile("`{3,}");
+
+    private static final Set<String> TEXT_FIELDS = Set.of("title", "content", "text", "button1", "button2", "label", "placeholder");
+    private static final Set<String> ARRAY_TEXT_FIELDS = Set.of("options", "steps");
+
+    public static String resolveRawText(final ResourcePackStorage packs, final String formJson) {
+        final JsonElement form = JsonParser.parseString(formJson);
+        resolveRawText(packs, form, 0);
+        return form.toString();
+    }
+
+    private static void resolveRawText(final ResourcePackStorage packs, final JsonElement node, final int depth) {
+        if (depth > 24) return;
+        if (node instanceof JsonArray array) {
+            for (final JsonElement entry : array) resolveRawText(packs, entry, depth + 1);
+        } else if (node instanceof JsonObject object) {
+            for (final var entry : object.entrySet()) {
+                final JsonElement value = entry.getValue();
+                if (TEXT_FIELDS.contains(entry.getKey()) && isRawText(value)) {
+                    entry.setValue(rawText(packs, value));
+                } else if (ARRAY_TEXT_FIELDS.contains(entry.getKey()) && value instanceof JsonArray entries) {
+                    for (int i = 0; i < entries.size(); i++) {
+                        if (isRawText(entries.get(i))) entries.set(i, rawText(packs, entries.get(i)));
+                    }
+                } else if (value.isJsonArray()) {
+                    resolveRawText(packs, value, depth + 1);
+                }
+            }
+        }
+    }
+
+    private static boolean isRawText(final JsonElement value) {
+        return value instanceof JsonObject object && object.get("rawtext") instanceof JsonArray;
+    }
+
+    private static JsonElement rawText(final ResourcePackStorage packs, final JsonElement json) {
+        final var component = BedrockComponentSerializer.deserialize(json);
+        component.forEach(part -> {
+            if (part instanceof TranslationBedrockComponent translation) translation.setTranslator(packs.getTexts().lookup());
+        });
+        return new com.google.gson.JsonPrimitive(component.asString());
+    }
 
     public static boolean isCubeCraftSelector(final ResourcePackStorage packs, final String title) {
         return (title.contains(SELECTOR_TITLE_MARKER) || title.strip().equals("Favourite"))

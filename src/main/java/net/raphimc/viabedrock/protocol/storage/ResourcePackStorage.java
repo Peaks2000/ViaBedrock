@@ -31,6 +31,11 @@ public class ResourcePackStorage implements StorableObject {
     private final Set<ResourcePack> packStackBottomToTop = Collections.newSetFromMap(new LinkedHashMap<>(128, 0.75F, true));
     private final Set<ResourcePack> packStackTopToBottom = Collections.newSetFromMap(new LinkedHashMap<>(128, 0.75F, false));
 
+    private UUID blockPackId;
+    private Runnable finishBlockPack;
+    private boolean blockPackLoaded;
+    private final Map<Integer, CustomBlockModel> customBlockModels = new HashMap<>();
+    private final Map<String, CustomBlockModel> customBlockItems = new HashMap<>();
     private boolean loadedOnJavaClient;
     private final AtomicBoolean bedrockStackFinishedSent = new AtomicBoolean();
     private final Map<String, Object> converterData = new ConcurrentHashMap<>();
@@ -90,6 +95,46 @@ public class ResourcePackStorage implements StorableObject {
 
     public void setLoadedOnJavaClient() {
         this.loadedOnJavaClient = true;
+    }
+
+    public void addCustomBlockModel(final int stateId, final CustomBlockModel model) {
+        this.customBlockModels.put(stateId, model);
+        this.customBlockItems.putIfAbsent(model.identifier(), model);
+    }
+
+    public CustomBlockModel customBlockModel(final int stateId) {
+        return this.blockPackLoaded ? this.customBlockModels.get(stateId) : null;
+    }
+
+    public CustomBlockModel customBlockItem(final String identifier) {
+        return this.blockPackLoaded ? this.customBlockItems.get(identifier) : null;
+    }
+
+    public record CustomBlockModel(String identifier, String variant, float scale, int carrier, int rotationY, boolean slabCarrier) { }
+
+    public void waitForBlockPack(final UUID id, final Runnable finish) {
+        this.blockPackId = id;
+        this.finishBlockPack = finish;
+    }
+
+    public boolean isWaitingForBlockPack() {
+        return this.finishBlockPack != null;
+    }
+
+    public boolean isBlockPack(final UUID id) {
+        return id.equals(this.blockPackId);
+    }
+
+    public boolean isBlockPackLoaded() {
+        return this.blockPackLoaded;
+    }
+
+    public void finishBlockPack(final boolean loaded) {
+        final Runnable finish = this.finishBlockPack;
+        if (finish == null) return;
+        this.finishBlockPack = null;
+        this.blockPackLoaded = loaded;
+        finish.run();
     }
 
     public boolean markBedrockStackFinishedSent() {

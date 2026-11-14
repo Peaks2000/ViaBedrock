@@ -64,8 +64,10 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
@@ -108,6 +110,10 @@ public final class WorldPackets {
             wrapper.cancel();
             return;
         }
+        if (blockStateRewriter.isKelp(previousBlockState) != blockStateRewriter.isKelp(blockState)) {
+            chunkTracker.refreshKelpBelow(position);
+        }
+        chunkTracker.updateCustomBlockDisplay(position);
 
         if (remappedBlock.value() != null || predictionConfirmed) {
             wrapper.send(BedrockProtocol.class);
@@ -435,6 +441,8 @@ public final class WorldPackets {
 
             final Map<BlockPosition, List<BlockChangeRecord>> blockChanges = new HashMap<>();
             final Map<BlockPosition, BlockEntity> blockEntities = new HashMap<>();
+            final Set<BlockPosition> kelpChanges = new HashSet<>();
+            final BlockStateRewriter blockStateRewriter = wrapper.user().get(BlockStateRewriter.class);
             boolean predictionConfirmed = false;
             for (int layer = 0; layer < blockUpdatesArray.length; layer++) {
                 for (BlockChangeEntry entry : blockUpdatesArray[layer]) {
@@ -457,6 +465,10 @@ public final class WorldPackets {
                         // momentarily restoring the block in Java before Bedrock confirms air.
                         continue;
                     }
+                    if (blockStateRewriter.isKelp(previousBlockState) != blockStateRewriter.isKelp(entry.blockState())) {
+                        kelpChanges.add(entry.position());
+                    }
+                    chunkTracker.updateCustomBlockDisplay(entry.position());
                     if (remappedBlock.value() != null) {
                         blockEntities.put(entry.position(), remappedBlock.value());
                     }
@@ -477,6 +489,7 @@ public final class WorldPackets {
                 multiBlockChange.write(Types.VAR_LONG_BLOCK_CHANGE_ARRAY, changes.toArray(new BlockChangeRecord[0])); // block change records
                 multiBlockChange.send(BedrockProtocol.class);
             }
+            kelpChanges.forEach(chunkTracker::refreshKelpBelow);
             for (Map.Entry<BlockPosition, BlockEntity> entry : blockEntities.entrySet()) {
                 PacketFactory.sendJavaBlockEntityData(wrapper.user(), entry.getKey(), entry.getValue());
             }

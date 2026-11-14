@@ -31,6 +31,7 @@ import java.util.logging.Level;
 public class ModelDefinitions {
 
     private final Map<String, BedrockGeometryModel> entityModels = new HashMap<>();
+    private final Map<String, BedrockGeometryModel> blockModels = new HashMap<>();
 
     public ModelDefinitions(final ResourcePackStorage resourcePackStorage) {
         for (ResourcePack pack : resourcePackStorage.getPackStackBottomToTop()) {
@@ -39,6 +40,8 @@ public class ModelDefinitions {
                     for (BedrockGeometryModel bedrockGeometry : BedrockGeometryParser.parse(pack.content().getString(modelPath))) {
                         if (modelPath.startsWith("models/entity/")) {
                             this.entityModels.put(bedrockGeometry.getIdentifier(), bedrockGeometry);
+                        } else if (modelPath.startsWith("models/blocks/")) {
+                            this.blockModels.put(bedrockGeometry.getIdentifier(), bedrockGeometry);
                         }
                     }
                 } catch (final Throwable e) {
@@ -46,6 +49,10 @@ public class ModelDefinitions {
                 }
             }
         }
+    }
+
+    public BedrockGeometryModel getBlockModel(final String name) {
+        return this.blockModels.get(name);
     }
 
     public BedrockGeometryModel getEntityModel(final String name) {

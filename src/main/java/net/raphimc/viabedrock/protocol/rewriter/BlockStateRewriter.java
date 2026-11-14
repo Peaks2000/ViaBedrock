@@ -232,6 +232,15 @@ public class BlockStateRewriter implements StorableObject {
         return this.blockStateIdMappings.get(bedrockBlockStateId);
     }
 
+    public boolean isKelp(final int bedrockBlockStateId) {
+        final BlockState state = this.blockState(bedrockBlockStateId);
+        return state != null && "minecraft:kelp".equals(state.namespacedIdentifier());
+    }
+
+    public int kelpPlantJavaId() {
+        return BedrockProtocol.MAPPINGS.getJavaBlockStates().getOrDefault(BlockState.fromString("minecraft:kelp_plant"), -1);
+    }
+
     public int waterlog(final int javaBlockStateId) {
         if (BedrockProtocol.MAPPINGS.getJavaPreWaterloggedBlockStates().contains(javaBlockStateId)) {
             return javaBlockStateId;

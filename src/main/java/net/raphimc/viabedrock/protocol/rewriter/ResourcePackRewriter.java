@@ -22,6 +22,7 @@ import net.raphimc.viabedrock.api.resourcepack.content.Content;
 import net.raphimc.viabedrock.api.resourcepack.content.InMemoryContent;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomAttachableResourceRewriter;
+import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomBlockResourceRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomEntityResourceRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomItemTextureResourceRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.GlyphSheetResourceRewriter;
@@ -40,6 +41,7 @@ public final class ResourcePackRewriter {
     static {
         REWRITERS.add(new GlyphSheetResourceRewriter());
         REWRITERS.add(new CustomItemTextureResourceRewriter());
+        REWRITERS.add(new CustomBlockResourceRewriter());
         REWRITERS.add(new CustomAttachableResourceRewriter());
         REWRITERS.add(new CustomEntityResourceRewriter());
     }
@@ -70,7 +72,7 @@ public final class ResourcePackRewriter {
         return javaContent;
     }
 
-    private static JsonObject createPackManifest() {
+    public static JsonObject createPackManifest() {
         final JsonObject pack = new JsonObject();
         pack.addProperty("description", "ViaBedrock Resource Pack");
         pack.addProperty("min_format", ProtocolConstants.JAVA_PACK_VERSION);

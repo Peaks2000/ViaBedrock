@@ -96,6 +96,7 @@ public class ClientPlayerEntity extends PlayerEntity {
     private GameMode javaGameMode;
     private boolean cancelNextSwingPacket;
     private BlockBreakingInfo blockBreakingInfo;
+    private boolean clientSwimming;
 
     public ClientPlayerEntity(final UserConnection user, final long runtimeId, final UUID javaUuid, final PlayerAbilities abilities) {
         super(user, runtimeId, 1, javaUuid, abilities);
@@ -191,6 +192,15 @@ public class ClientPlayerEntity extends PlayerEntity {
     }
 
     public void writePlayerPositionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives, final boolean fakeTeleport) {
+        this.movementPredictions.reset(this.age);
+        this.writePositionPacketToClient(wrapper, relatives, fakeTeleport);
+    }
+
+    public void writeMovementCorrectionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives) {
+        this.writePositionPacketToClient(wrapper, relatives, true);
+    }
+
+    private void writePositionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives, final boolean fakeTeleport) {
         this.pendingTeleportId = this.teleportId.getAndIncrement();
 
         wrapper.write(Types.VAR_INT, this.pendingTeleportId * (fakeTeleport ? -1 : 1)); // teleport id
@@ -235,54 +245,54 @@ public class ClientPlayerEntity extends PlayerEntity {
 
     public void updatePlayerPosition(final short flags) {
         final boolean newOnGround = (flags & MovePlayerFlag.ON_GROUND.getBit()) != 0;
-
-        if (!this.preMove(null, null, newOnGround)) {
+        final boolean newHorizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        if (!this.preMove(null, null, newOnGround, newHorizontalCollision)) {
             return;
         }
 
         this.onGround = newOnGround;
-        this.horizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        this.horizontalCollision = newHorizontalCollision;
     }
 
     public void updatePlayerPosition(final double x, final double y, final double z, final short flags) {
         final Position3f newPosition = new Position3f((float) x, (float) y + this.eyeOffset(), (float) z);
         final boolean newOnGround = (flags & MovePlayerFlag.ON_GROUND.getBit()) != 0;
-
-        if (!this.preMove(newPosition, null, newOnGround)) {
+        final boolean newHorizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        if (!this.preMove(newPosition, null, newOnGround, newHorizontalCollision)) {
             return;
         }
 
         this.position = newPosition;
         this.onGround = newOnGround;
-        this.horizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        this.horizontalCollision = newHorizontalCollision;
     }
 
     public void updatePlayerPosition(final double x, final double y, final double z, final float yaw, final float pitch, final short flags) {
         final Position3f newPosition = new Position3f((float) x, (float) y + this.eyeOffset(), (float) z);
         final Position3f newRotation = new Position3f(pitch, yaw, yaw);
         final boolean newOnGround = (flags & MovePlayerFlag.ON_GROUND.getBit()) != 0;
-
-        if (!this.preMove(newPosition, newRotation, newOnGround)) {
+        final boolean newHorizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        if (!this.preMove(newPosition, newRotation, newOnGround, newHorizontalCollision)) {
             return;
         }
 
         this.position = newPosition;
         this.rotation = newRotation;
         this.onGround = newOnGround;
-        this.horizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        this.horizontalCollision = newHorizontalCollision;
     }
 
     public void updatePlayerPosition(final float yaw, final float pitch, final short flags) {
         final Position3f newRotation = new Position3f(pitch, yaw, yaw);
         final boolean newOnGround = (flags & MovePlayerFlag.ON_GROUND.getBit()) != 0;
-
-        if (!this.preMove(null, newRotation, newOnGround)) {
+        final boolean newHorizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        if (!this.preMove(null, newRotation, newOnGround, newHorizontalCollision)) {
             return;
         }
 
         this.rotation = newRotation;
         this.onGround = newOnGround;
-        this.horizontalCollision = (flags & MovePlayerFlag.HORIZONTAL_COLLISION.getBit()) != 0;
+        this.horizontalCollision = newHorizontalCollision;
     }
 
     public void confirmTeleport(final int teleportId) {
@@ -308,22 +318,23 @@ public class ClientPlayerEntity extends PlayerEntity {
         return this.prevOnGround;
     }
 
-    public void recordMovementPrediction() {
+    public void recordMovementPrediction(final Position3f movement) {
         this.movementPredictions.record(
-            this.age, this.position, this.onGround, this.horizontalCollision,
+            this.age, this.position, movement, this.onGround, this.horizontalCollision,
             this.hasContinuousVerticalMovement(),
             this.gameSession.getMovementRewindHistorySize()
         );
     }
 
+    public boolean acceptsMovementCorrection(final long tick) {
+        return this.movementPredictions.acceptsCorrection(tick, this.age, this.gameSession.getMovementRewindHistorySize());
+    }
+
     public MovementPredictionTracker.Correction replayMovementCorrection(final long tick, final Position3f position,
-                                                                          final boolean onGround) {
-        // Shift is also significant while grounded: Java can briefly report an edge-crouched
-        // player as airborne, but its safe-walk position must not receive an old Bedrock Y
-        // correction. In flight the same continuous input stabilizes descent packet cadence.
+                                                                          final Position3f velocity, final boolean onGround) {
         final boolean verticalStabilizationInput = this.inputFlags.contains(InputFlag.SHIFT);
         return this.movementPredictions.replay(
-            tick, position, onGround, this.age, this.position, this.onGround, this.horizontalCollision,
+            tick, position, velocity, onGround, this.age, this.position, this.onGround, this.horizontalCollision,
             verticalStabilizationInput, this.hasContinuousVerticalMovement()
         );
     }
@@ -596,6 +607,14 @@ public class ClientPlayerEntity extends PlayerEntity {
         return this.blockBreakingInfo;
     }
 
+    public boolean clientSwimming() {
+        return this.clientSwimming;
+    }
+
+    public void setClientSwimming(final boolean swimming) {
+        this.clientSwimming = swimming;
+    }
+
     public void setBlockBreakingInfo(final BlockBreakingInfo blockBreakingInfo) {
         this.blockBreakingInfo = blockBreakingInfo;
     }
@@ -638,7 +657,8 @@ public class ClientPlayerEntity extends PlayerEntity {
         };
     }
 
-    private boolean preMove(final Position3f newPosition, final Position3f newRotation, final boolean newOnGround) {
+    private boolean preMove(final Position3f newPosition, final Position3f newRotation, final boolean newOnGround,
+                            final boolean newHorizontalCollision) {
         final ChunkTracker chunkTracker = this.user.get(ChunkTracker.class);
 
         // Allow position packet which is sent immediately after confirming a teleport
@@ -682,7 +702,7 @@ public class ClientPlayerEntity extends PlayerEntity {
             return true;
         } else if (newRotation != null && !this.rotation.equals(newRotation)) {
             return true;
-        } else if (this.onGround != newOnGround) {
+        } else if (this.onGround != newOnGround || this.horizontalCollision != newHorizontalCollision) {
             return true;
         }
 

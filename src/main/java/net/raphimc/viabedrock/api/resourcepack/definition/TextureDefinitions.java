@@ -29,38 +29,57 @@ import java.util.logging.Level;
 public class TextureDefinitions {
 
     private final Map<String, List<ItemTextureDefinition>> itemTextures = new HashMap<>();
+    private final Map<String, List<ItemTextureDefinition>> terrainTextures = new HashMap<>();
 
     public TextureDefinitions(final ResourcePackStorage resourcePackStorage) {
         for (ResourcePack pack : resourcePackStorage.getPackStackBottomToTop()) {
-            if (pack.content().contains("textures/item_texture.json")) {
-                try {
-                    final JsonObject itemTexture = pack.content().getJson("textures/item_texture.json");
-                    final String textureName = itemTexture.has("texture_name") ? itemTexture.get("texture_name").getAsString() : "atlas.items";
-                    if (textureName.equals("atlas.items")) {
-                        final JsonObject textureData = itemTexture.getAsJsonObject("texture_data");
-                        for (Map.Entry<String, JsonElement> entry : textureData.entrySet()) {
-                            final String name = entry.getKey();
-                            final JsonElement textures = entry.getValue().getAsJsonObject().get("textures");
-                            final List<ItemTextureDefinition> itemTextureDefinitions = new ArrayList<>();
-                            if (textures.isJsonPrimitive() && textures.getAsJsonPrimitive().isString()) {
-                                itemTextureDefinitions.add(new ItemTextureDefinition(name, textures.getAsString()));
-                            } else if (textures.isJsonArray()) {
-                                for (JsonElement texture : textures.getAsJsonArray()) {
-                                    itemTextureDefinitions.add(new ItemTextureDefinition(name, texture.getAsString()));
-                                }
-                            }
-                            this.itemTextures.put(name, itemTextureDefinitions);
-                        }
-                    }
-                } catch (final Throwable e) {
-                    ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to parse item_texture.json in pack " + pack.key(), e);
-                }
-            }
+            this.readAtlas(pack, "textures/item_texture.json", "atlas.items", this.itemTextures);
+            this.readAtlas(pack, "textures/terrain_texture.json", "atlas.terrain", this.terrainTextures);
         }
+    }
+
+    private void readAtlas(final ResourcePack pack, final String path, final String atlas,
+                           final Map<String, List<ItemTextureDefinition>> target) {
+        if (!pack.content().contains(path)) return;
+        try {
+            final JsonObject definition = pack.content().getJson(path);
+            if (definition.has("texture_name") && !atlas.equals(definition.get("texture_name").getAsString())) return;
+            final JsonObject textureData = definition.getAsJsonObject("texture_data");
+            if (textureData == null) return;
+            for (Map.Entry<String, JsonElement> entry : textureData.entrySet()) {
+                if (!entry.getValue().isJsonObject()) continue;
+                final String name = entry.getKey();
+                final JsonElement textures = entry.getValue().getAsJsonObject().get("textures");
+                final List<ItemTextureDefinition> resolved = new ArrayList<>();
+                if (textures != null && textures.isJsonArray()) {
+                    for (JsonElement texture : textures.getAsJsonArray()) {
+                        final String texturePath = texturePath(texture);
+                        if (texturePath != null) resolved.add(new ItemTextureDefinition(name, texturePath));
+                    }
+                } else {
+                    final String texturePath = texturePath(textures);
+                    if (texturePath != null) resolved.add(new ItemTextureDefinition(name, texturePath));
+                }
+                if (!resolved.isEmpty()) target.put(name, List.copyOf(resolved));
+            }
+        } catch (final RuntimeException e) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to parse " + path + " in pack " + pack.key(), e);
+        }
+    }
+
+    private static String texturePath(final JsonElement element) {
+        if (element == null || element.isJsonNull()) return null;
+        if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) return element.getAsString();
+        if (element.isJsonObject()) return texturePath(element.getAsJsonObject().get("path"));
+        return null;
     }
 
     public Map<String, List<ItemTextureDefinition>> itemTextures() {
         return Collections.unmodifiableMap(this.itemTextures);
+    }
+
+    public Map<String, List<ItemTextureDefinition>> terrainTextures() {
+        return Collections.unmodifiableMap(this.terrainTextures);
     }
 
     public record ItemTextureDefinition(String name, String texturePath) {

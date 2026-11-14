@@ -48,6 +48,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.*;
 import net.raphimc.viabedrock.protocol.data.enums.java.generated.*;
 import net.raphimc.viabedrock.protocol.model.Position2f;
 import net.raphimc.viabedrock.protocol.model.Position3f;
+import net.raphimc.viabedrock.protocol.model.PlayerFluidInput;
 import net.raphimc.viabedrock.protocol.rewriter.GameTypeRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.*;
@@ -179,8 +180,6 @@ public final class ClientPlayerPackets {
             }
         });
         protocol.registerClientbound(ClientboundBedrockPackets.CORRECT_PLAYER_MOVE_PREDICTION, ClientboundPackets26_3.PLAYER_POSITION, wrapper -> {
-            final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
-
             final byte rawRewindType = wrapper.read(Types.BYTE); // rewind type
             final RewindType rewindType = RewindType.getByValue(rawRewindType);
             if (rewindType == null) {
@@ -188,7 +187,7 @@ public final class ClientPlayerPackets {
                 return;
             }
             final Position3f position = wrapper.read(BedrockTypes.POSITION_3F); // position
-            wrapper.read(BedrockTypes.POSITION_3F); // position delta
+            final Position3f velocity = wrapper.read(BedrockTypes.POSITION_3F); // corrected velocity
             wrapper.read(BedrockTypes.POSITION_2F); // vehicle rotation
             if (wrapper.read(Types.BOOLEAN)) {
                 wrapper.read(BedrockTypes.FLOAT_LE); // vehicle angular velocity
@@ -198,16 +197,40 @@ public final class ClientPlayerPackets {
                     final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
                     final boolean onGround = wrapper.read(Types.BOOLEAN); // on ground
                     final long tick = wrapper.read(BedrockTypes.UNSIGNED_VAR_LONG); // tick
-                    if (tick > clientPlayer.age() || tick < clientPlayer.age() - gameSession.getMovementRewindHistorySize()) {
+                    if (!clientPlayer.acceptsMovementCorrection(tick)) {
                         wrapper.cancel();
                         return;
                     }
 
                     final MovementPredictionTracker.Correction correction =
-                        clientPlayer.replayMovementCorrection(tick, position, onGround);
-                    clientPlayer.setPosition(correction.position());
+                        clientPlayer.replayMovementCorrection(tick, position, velocity, onGround);
+                    if (!correction.changesClientMovement(clientPlayer.position(), clientPlayer.isOnGround())) {
+                        wrapper.cancel();
+                        return;
+                    }
+                    final Set<Relative> relatives = EnumSet.copyOf(Relative.union(Relative.ROTATION, Relative.VELOCITY));
+                    if (correction.stopX()) {
+                        relatives.remove(Relative.DELTA_X);
+                    }
+                    if (correction.stopZ()) {
+                        relatives.remove(Relative.DELTA_Z);
+                    }
+                    // Leave untouched axes relative so a correction on one axis does not
+                    // rewind movement Java has already simulated on another axis.
+                    final Position3f currentPosition = clientPlayer.position();
+                    final Position3f correctedPosition = correction.position();
+                    if (correctedPosition.x() == currentPosition.x()) {
+                        relatives.add(Relative.X);
+                    }
+                    if (correction.preserveVertical() || correctedPosition.y() == currentPosition.y()) {
+                        relatives.add(Relative.Y);
+                    }
+                    if (correctedPosition.z() == currentPosition.z()) {
+                        relatives.add(Relative.Z);
+                    }
+                    clientPlayer.setPosition(correctedPosition);
                     clientPlayer.setOnGround(correction.onGround());
-                    clientPlayer.writePlayerPositionPacketToClient(wrapper, Relative.union(Relative.ROTATION, Relative.VELOCITY), true);
+                    clientPlayer.writeMovementCorrectionPacketToClient(wrapper, relatives);
                 }
                 case Vehicle -> wrapper.cancel();
                 default -> throw new IllegalStateException("Unhandled RewindType: " + rewindType);
@@ -387,10 +410,11 @@ public final class ClientPlayerPackets {
                     } else {
                         clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.ContinueDestroyBlock, position, direction.ordinal()));
                         clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.PredictDestroyBlock, position, direction.ordinal()));
-                        clientPlayer.addAuthInputBlockAction(new ClientPlayerEntity.AuthInputBlockAction(PlayerActionType.AbortDestroyBlock, position, 0));
+                        // The host can still be progressing this break after Java predicts it.
+                        // Aborting it in the same input frame can cancel the host's break.
                     }
 
-                    chunkTracker.handleBlockChange(position, 0, chunkTracker.bedrockAirId());
+                    // Preserve the server's last block state for rollback if it rejects the break.
                     PacketFactory.sendJavaBlockUpdate(wrapper.user(), position, ProtocolConstants.JAVA_AIR_ID);
                 }
                 case CHANGE_DESTROY_DIRECTION -> {
@@ -530,7 +554,6 @@ public final class ClientPlayerPackets {
             final boolean prevOnGround = clientPlayer.prevOnGround();
             final Set<InputFlag> prevInputFlags = clientPlayer.prevInputFlags();
             clientPlayer.tick();
-
             if (prevOnGround && clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputData.StartJumping);
             }
@@ -551,7 +574,15 @@ public final class ClientPlayerPackets {
                 return;
             }
 
-            clientPlayer.recordMovementPrediction();
+            final float[] fluidSnapshot = wrapper.user().getChannel().attr(PlayerFluidInput.KEY).getAndSet(null);
+            final PlayerFluidInput fluid = fluidSnapshot != null ? PlayerFluidInput.decode(fluidSnapshot) : null;
+            if (fluid != null && fluid.swimming() != clientPlayer.clientSwimming()) {
+                clientPlayer.setClientSwimming(fluid.swimming());
+                clientPlayer.addAuthInputData(fluid.swimming() ? PlayerAuthInputData.StartSwimming : PlayerAuthInputData.StopSwimming);
+            }
+
+            final Position3f positionDelta = clientPlayer.position().subtract(prevPosition);
+            clientPlayer.recordMovementPrediction(positionDelta);
 
             clientPlayer.addAuthInputData(PlayerAuthInputData.BlockBreakingDelayEnabled);
             if (clientPlayer.isOnGround()) {
@@ -577,7 +608,7 @@ public final class ClientPlayerPackets {
                 clientPlayer.inputFlags().contains(InputFlag.JUMP),
                 clientPlayer.inputFlags().contains(InputFlag.SHIFT),
                 clientPlayer.isOnClimbable(),
-                clientPlayer.position().y() - prevPosition.y()
+                positionDelta.y()
             ));
             if (clientPlayer.inputFlags().contains(InputFlag.SPRINT)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputData.SprintDown, PlayerAuthInputData.Sprinting);
@@ -607,12 +638,14 @@ public final class ClientPlayerPackets {
                 }
             }
 
-            final Position3f positionDelta = clientPlayer.position().subtract(prevPosition);
             final Position3f velocity;
             if (!clientPlayer.isInitiallySpawned() || clientPlayer.dimensionChangeInfo() != null
                 || clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying)
                 || clientPlayer.hasClientPredictedVehicle()) {
                 velocity = positionDelta;
+            } else if (fluid != null && fluid.inFluid()) {
+                // Java has already applied the fluid's drag, buoyancy and vertical input.
+                velocity = new Position3f(fluid.velocityX(), fluid.velocityY(), fluid.velocityZ());
             } else {
                 float dx = positionDelta.x() * 0.98F;
                 float dy = positionDelta.y();

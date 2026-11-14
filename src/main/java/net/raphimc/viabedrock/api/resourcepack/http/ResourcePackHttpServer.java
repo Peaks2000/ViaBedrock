@@ -35,13 +35,14 @@ import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 public class ResourcePackHttpServer {
 
     private final InetSocketAddress bindAddress;
     private final ChannelFuture channelFuture;
-    private final Map<UUID, UserConnection> connections = new HashMap<>();
+    private final Map<UUID, PackRequest> connections = new HashMap<>();
 
     public ResourcePackHttpServer(final InetSocketAddress bindAddress) {
         this.bindAddress = bindAddress;
@@ -58,7 +59,7 @@ public class ResourcePackHttpServer {
                     channel.pipeline().addLast("chunked_writer", new ChunkedWriteHandler());
                     channel.pipeline().addLast("http_handler", new SimpleChannelInboundHandler<>() {
                         @Override
-                        protected void channelRead0(final ChannelHandlerContext ctx, final Object msg) throws InterruptedException {
+                        protected void channelRead0(final ChannelHandlerContext ctx, final Object msg) {
                             if (msg instanceof HttpRequest request) {
                                 if (!request.method().equals(HttpMethod.GET)) {
                                     ctx.close();
@@ -71,20 +72,18 @@ public class ResourcePackHttpServer {
                                     return;
                                 }
                                 final UUID uuid = UUID.fromString(queryStringDecoder.parameters().get("token").get(0));
-                                final UserConnection user = ResourcePackHttpServer.this.connections.get(uuid);
-                                if (user == null) {
+                                final PackRequest packRequest;
+                                synchronized (ResourcePackHttpServer.this.connections) {
+                                    packRequest = ResourcePackHttpServer.this.connections.get(uuid);
+                                }
+                                if (packRequest == null) {
                                     ctx.close();
                                     return;
                                 }
 
-                                while (!user.has(ResourcePackStorage.class)) {
-                                    Thread.sleep(100);
-                                }
-                                final ResourcePackStorage resourcePackStorage = user.get(ResourcePackStorage.class);
-
                                 try {
                                     final long start = System.nanoTime();
-                                    final Content javaContent = ResourcePackRewriter.bedrockToJava(resourcePackStorage);
+                                    final Content javaContent = packRequest.content() != null ? packRequest.content() : loadResourcePack(packRequest.user());
                                     final byte[] data = javaContent.toZip();
                                     final long end = System.nanoTime();
                                     ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Converted resource packs in " + ((end - start) / 1_000_000L) + "ms");
@@ -115,9 +114,23 @@ public class ResourcePackHttpServer {
             .syncUninterruptibly();
     }
 
+    private static Content loadResourcePack(final UserConnection user) throws InterruptedException {
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(95);
+        while (!user.has(ResourcePackStorage.class) && user.getChannel().isActive() && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+        }
+        final ResourcePackStorage storage = user.get(ResourcePackStorage.class);
+        if (storage == null) throw new IllegalStateException("Bedrock resource pack stack did not arrive");
+        return ResourcePackRewriter.bedrockToJava(storage);
+    }
+
     public void addConnection(final UUID uuid, final UserConnection connection) {
+        this.addConnection(uuid, connection, null);
+    }
+
+    public void addConnection(final UUID uuid, final UserConnection connection, final Content content) {
         synchronized (this.connections) {
-            this.connections.put(uuid, connection);
+            this.connections.put(uuid, new PackRequest(connection, content));
         }
 
         connection.getChannel().closeFuture().addListener(future -> {
@@ -132,6 +145,8 @@ public class ResourcePackHttpServer {
             this.channelFuture.channel().close();
         }
     }
+
+    private record PackRequest(UserConnection user, Content content) { }
 
     public String getUrl() {
         final String overrideUrl = ViaBedrock.getConfig().getResourcePackUrl();

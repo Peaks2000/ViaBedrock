@@ -40,6 +40,7 @@ import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets
 import com.viaversion.viaversion.util.CompactArrayUtil;
 import com.viaversion.viaversion.util.MathUtil;
 import net.raphimc.viabedrock.ViaBedrock;
+import net.raphimc.viabedrock.api.util.PacketFactory;
 import net.raphimc.viabedrock.api.chunk.BedrockBlockEntity;
 import net.raphimc.viabedrock.api.chunk.BedrockChunk;
 import net.raphimc.viabedrock.api.chunk.BlockEntityWithBlockState;
@@ -50,6 +51,7 @@ import net.raphimc.viabedrock.api.chunk.light.LightEngine;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSection;
 import net.raphimc.viabedrock.api.chunk.section.BedrockChunkSectionImpl;
 import net.raphimc.viabedrock.api.model.BedrockBlockState;
+import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.ServerboundBedrockPackets;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
@@ -61,6 +63,7 @@ import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.BlockEntityRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
+import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage.CustomBlockModel;
 import net.raphimc.viabedrock.protocol.util.BoundedDiagnosticLimiter;
 
 import java.util.*;
@@ -82,6 +85,8 @@ public class ChunkTracker extends StoredObject {
     private final int worldHeight;
     private final boolean skyLight;
     private final Type<Chunk> chunkType;
+    private final CustomBlockDisplays customBlockDisplays;
+    private final Map<Integer, Optional<CustomBlockModel>> resourcePackBlockModels = new HashMap<>();
 
     private final Long2ObjectMap<BedrockChunk> chunks = new Long2ObjectOpenHashMap<>();
     private final Set<Long> dirtyChunks = new LinkedHashSet<>();
@@ -113,6 +118,7 @@ public class ChunkTracker extends StoredObject {
     public ChunkTracker(final UserConnection user, final Dimension dimension) {
         super(user);
         this.dimension = dimension;
+        this.customBlockDisplays = new CustomBlockDisplays(user);
 
         final GameSessionStorage gameSession = user.get(GameSessionStorage.class);
         final CompoundTag registries = gameSession.getJavaRegistries();
@@ -175,6 +181,7 @@ public class ChunkTracker extends StoredObject {
 
     public void unloadChunk(final ChunkPosition chunkPos) {
         final long chunkKey = chunkPos.chunkKey();
+        this.customBlockDisplays.replaceChunk(chunkKey, Map.of());
         this.chunks.remove(chunkKey);
         this.dirtyChunks.remove(chunkKey);
         this.javaBlockStateCache.remove(chunkKey);
@@ -242,7 +249,54 @@ public class ChunkTracker extends StoredObject {
         final int sectionY = blockPosition.y() & 15;
         final int sectionZ = blockPosition.z() & 15;
 
-        return this.getJavaBlockState(chunkSection, sectionX, sectionY, sectionZ);
+        final int javaState = this.getJavaBlockState(chunkSection, sectionX, sectionY, sectionZ);
+        final CustomBlockModel display = this.customBlockModel(blockPosition);
+        return display == null ? this.connectKelp(blockPosition, javaState) : display.carrier();
+    }
+
+    private CustomBlockModel customBlockModel(final BlockPosition position) {
+        final int stateId = visibleLayerBlockState(this.getBlockState(0, position), this.getBlockState(1, position), this.bedrockAirId());
+        return this.customBlockModel(this.user().get(BlockStateRewriter.class), stateId);
+    }
+
+    private CustomBlockModel customBlockModel(final BlockStateRewriter rewriter, final int stateId) {
+        final ResourcePackStorage packs = this.user().get(ResourcePackStorage.class);
+        if (packs == null || !packs.isLoadedOnJavaClient()) return null;
+        final CustomBlockModel networkModel = packs.customBlockModel(stateId);
+        if (networkModel != null) return networkModel;
+        return this.resourcePackBlockModels.computeIfAbsent(stateId, id -> {
+            final BlockState state = rewriter.blockState(id);
+            if (state == null || state.namespacedIdentifier().startsWith("minecraft:")) return Optional.empty();
+            final String identifier = state.namespacedIdentifier();
+            if (!this.customBlockDisplays.canRender(identifier)) return Optional.empty();
+            final int carrier = BedrockProtocol.MAPPINGS.getJavaBlockStates().getOrDefault(
+                BlockState.fromString("minecraft:barrier[waterlogged=false]"), ProtocolConstants.JAVA_AIR_ID);
+            return Optional.of(new CustomBlockModel(identifier, "world", 1F, carrier, 0, false));
+        }).orElse(null);
+    }
+
+    public void updateCustomBlockDisplay(final BlockPosition position) {
+        this.customBlockDisplays.update(position, this.customBlockModel(position));
+    }
+
+    private int connectKelp(final BlockPosition position, final int javaState) {
+        final BlockStateRewriter rewriter = this.user().get(BlockStateRewriter.class);
+        final int current = visibleLayerBlockState(this.getBlockState(0, position), this.getBlockState(1, position), this.bedrockAirId());
+        if (!rewriter.isKelp(current)) return javaState;
+        final BlockPosition above = new BlockPosition(position.x(), position.y() + 1, position.z());
+        final int upper = visibleLayerBlockState(this.getBlockState(0, above), this.getBlockState(1, above), this.bedrockAirId());
+        if (!rewriter.isKelp(upper)) return javaState;
+        final int stem = rewriter.kelpPlantJavaId();
+        return stem != -1 ? stem : javaState;
+    }
+
+    public void refreshKelpBelow(final BlockPosition changed) {
+        final BlockStateRewriter rewriter = this.user().get(BlockStateRewriter.class);
+        final BlockPosition below = new BlockPosition(changed.x(), changed.y() - 1, changed.z());
+        final int lower = visibleLayerBlockState(this.getBlockState(0, below), this.getBlockState(1, below), this.bedrockAirId());
+        if (rewriter.isKelp(lower) && !this.user().get(BlockPlacementPredictionTracker.class).isPendingBreaking(below)) {
+            PacketFactory.sendJavaBlockUpdate(this.user(), below, this.getJavaBlockState(below));
+        }
     }
 
     public static boolean hasBlockPalette(final BedrockChunkSection section) {
@@ -460,7 +514,7 @@ public class ChunkTracker extends StoredObject {
         palette.setIdAt(sectionX, sectionY, sectionZ, blockState);
         final String tag = blockStateRewriter.tag(blockState);
 
-        int remappedBlockState = this.getJavaBlockState(section, sectionX, sectionY, sectionZ);
+        int remappedBlockState = this.getJavaBlockState(blockPosition);
         if (!Objects.equals(prevTag, tag)) {
             this.getChunk(blockPosition.x() >> 4, blockPosition.z() >> 4).removeBlockEntityAt(blockPosition);
             entityTracker.removeItemFrame(blockPosition);
@@ -521,14 +575,17 @@ public class ChunkTracker extends StoredObject {
             return;
         }
 
-        final Chunk remappedChunk = this.remapChunk(chunk);
+        final Map<BlockPosition, CustomBlockModel> blockModels = new HashMap<>();
+        final Chunk remappedChunk = this.remapChunk(chunk, blockModels);
         final ChunkLight light = this.computeChunkLight(chunkX, chunkZ);
 
         final PacketWrapper levelChunkWithLight = PacketWrapper.create(ClientboundPackets26_3.LEVEL_CHUNK_WITH_LIGHT, this.user());
         levelChunkWithLight.write(this.chunkType, remappedChunk); // chunk
         this.writeLightData(levelChunkWithLight, buildFullLightPacketData(light));
-        levelChunkWithLight.send(BedrockProtocol.class);
         final long chunkKey = ChunkPosition.chunkKey(chunkX, chunkZ);
+        this.customBlockDisplays.prepareChunk(chunkKey, blockModels);
+        levelChunkWithLight.send(BedrockProtocol.class);
+        this.customBlockDisplays.replaceChunk(chunkKey, blockModels);
         this.chunkLight.put(chunkKey, light);
         this.lightVersions.merge(chunkKey, 1L, Long::sum);
         // Initial lighting uses this chunk alone. Refresh its borders with any loaded neighbors.
@@ -902,7 +959,7 @@ public class ChunkTracker extends StoredObject {
         return Integer.compare(first.subChunkY, second.subChunkY);
     }
 
-    private Chunk remapChunk(final BedrockChunk chunk) {
+    private Chunk remapChunk(final BedrockChunk chunk, final Map<BlockPosition, CustomBlockModel> blockModels) {
         final BlockStateRewriter blockStateRewriter = this.user().get(BlockStateRewriter.class);
         final int airId = this.bedrockAirId();
 
@@ -1006,6 +1063,38 @@ public class ChunkTracker extends StoredObject {
                     }
                 }
 
+                if (blockPalettes.stream().anyMatch(palette -> {
+                    for (int index = 0; index < palette.size(); index++) {
+                        final int id = palette.idByIndex(index);
+                        if (blockStateRewriter.isKelp(id) || this.customBlockModel(blockStateRewriter, id) != null) return true;
+                    }
+                    return false;
+                })) {
+                    final DataPalette layer1 = blockPalettes.size() > 1 ? blockPalettes.get(1) : null;
+                    final int baseY = this.minY + (idx << 4);
+                    final int baseX = chunk.getX() << 4;
+                    final int baseZ = chunk.getZ() << 4;
+                    final int stem = blockStateRewriter.kelpPlantJavaId();
+                    for (int y = 0; y < 16; y++) {
+                        for (int z = 0; z < 16; z++) {
+                            for (int x = 0; x < 16; x++) {
+                                final int visible = visibleLayerBlockState(layer0, layer1, x, y, z, airId);
+                                if (blockStateRewriter.isKelp(visible)) {
+                                    final boolean hasUpperKelp = y < 15
+                                        ? blockStateRewriter.isKelp(visibleLayerBlockState(layer0, layer1, x, y + 1, z, airId))
+                                        : this.connectKelp(new BlockPosition(baseX + x, baseY + y, baseZ + z), -1) == stem;
+                                    if (hasUpperKelp && stem != -1) remappedBlockPalette.setIdAt(x, y, z, stem);
+                                } else if (visible != airId) {
+                                    final CustomBlockModel model = this.customBlockModel(blockStateRewriter, visible);
+                                    if (model != null) {
+                                        blockModels.put(new BlockPosition(baseX + x, baseY + y, baseZ + z), model);
+                                        remappedBlockPalette.setIdAt(x, y, z, model.carrier());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 int nonAirBlockCount = 0;
                 int fluidCount = 0;
                 for (int i = 0; i < ChunkSection.SIZE; i++) {
@@ -1107,6 +1196,12 @@ public class ChunkTracker extends StoredObject {
         remappedChunk.heightmaps()[1] = new Heightmap(HeightmapType.MOTION_BLOCKING.ordinal(), CompactArrayUtil.createCompactArrayWithPadding(bitsPerEntry, motionBlocking.length, i -> motionBlocking[i]));
 
         return remappedChunk;
+    }
+
+    private static int visibleLayerBlockState(final DataPalette primary, final DataPalette secondary,
+                                              final int x, final int y, final int z, final int airId) {
+        final int state = primary.idAt(x, y, z);
+        return state == airId && secondary != null ? secondary.idAt(x, y, z) : state;
     }
 
     public static int visibleLayerBlockState(final int blockState0, final int blockState1, final int airId) {

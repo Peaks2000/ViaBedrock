@@ -58,10 +58,12 @@ import net.raphimc.viabedrock.protocol.data.generated.java.Attributes;
 import net.raphimc.viabedrock.protocol.model.*;
 import net.raphimc.viabedrock.protocol.rewriter.BlockStateRewriter;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
+import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomBlockResourceRewriter;
 import net.raphimc.viabedrock.protocol.storage.*;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 public final class JoinPackets {
@@ -201,6 +203,7 @@ public final class JoinPackets {
         protocol.registerClientboundTransition(ClientboundBedrockPackets.START_GAME,
             State.CONFIGURATION, (PacketHandler) wrapper -> {
                 wrapper.cancel();
+                if (wrapper.user().has(JoinGameStorage.class)) return;
                 final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
                 ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
                 if (resourcePackStorage == null) {
@@ -403,14 +406,30 @@ public final class JoinPackets {
                     updateEnabledFeatures.send(BedrockProtocol.class);
                 }
 
-                handleJavaClientGameJoin(wrapper.user());
-                wrapper.user().get(PrePlayPacketQueue.class).replay();
-
-                final PacketWrapper requestChunkRadius = PacketWrapper.create(ServerboundBedrockPackets.REQUEST_CHUNK_RADIUS, wrapper.user());
-                requestChunkRadius.write(BedrockTypes.VAR_INT, wrapper.user().get(ClientSettingsStorage.class).viewDistance()); // radius
-                requestChunkRadius.write(Types.BYTE, ProtocolConstants.BEDROCK_REQUEST_CHUNK_RADIUS_MAX_RADIUS); // max radius
-                requestChunkRadius.sendToServer(BedrockProtocol.class);
-                PacketFactory.sendBedrockLoadingScreen(wrapper.user(), ServerboundLoadingScreenPacketType.StartLoadingScreen, null);
+                final UserConnection user = wrapper.user();
+                final ResourcePackStorage packs = resourcePackStorage;
+                final Runnable finish = () -> finishBedrockJoin(user);
+                if (packs.isLoadedOnJavaClient()) {
+                    final var blockPack = CustomBlockResourceRewriter.convertNetworkBlocks(packs, blockProperties, user.get(BlockStateRewriter.class));
+                    if (blockPack != null) {
+                        final UUID id = UUID.randomUUID();
+                        final UUID token = UUID.randomUUID();
+                        ViaBedrock.getResourcePackServer().addConnection(token, user, blockPack);
+                        packs.waitForBlockPack(id, finish);
+                        final PacketWrapper push = PacketWrapper.create(ClientboundConfigurationPackets26_3.RESOURCE_PACK_PUSH, user);
+                        push.write(Types.UUID, id);
+                        push.write(Types.STRING, ViaBedrock.getResourcePackServer().getUrl() + "?token=" + token);
+                        push.write(Types.STRING, "");
+                        push.write(Types.BOOLEAN, false);
+                        push.write(Types.OPTIONAL_TAG, null);
+                        push.send(BedrockProtocol.class);
+                        user.getChannel().eventLoop().schedule(() -> {
+                            if (user.getChannel().isActive()) packs.finishBlockPack(false);
+                        }, 30, TimeUnit.SECONDS);
+                        return;
+                    }
+                }
+                finish.run();
             }, State.PLAY, (PacketHandler) PacketWrapper::cancel // Bedrock client ignores multiple start game packets
         );
         protocol.registerClientboundTransition(ClientboundBedrockPackets.BIOME_DEFINITION_LIST,
@@ -507,6 +526,16 @@ public final class JoinPackets {
             case PlayerSpawn, LoginSuccess -> wrapper.cancel();
             default -> throw new IllegalStateException("Unhandled PlayStatus: " + status);
         }
+    }
+
+    private static void finishBedrockJoin(final UserConnection user) {
+        handleJavaClientGameJoin(user);
+        user.get(PrePlayPacketQueue.class).replay();
+        final PacketWrapper radius = PacketWrapper.create(ServerboundBedrockPackets.REQUEST_CHUNK_RADIUS, user);
+        radius.write(BedrockTypes.VAR_INT, user.get(ClientSettingsStorage.class).viewDistance());
+        radius.write(Types.BYTE, ProtocolConstants.BEDROCK_REQUEST_CHUNK_RADIUS_MAX_RADIUS);
+        radius.sendToServer(BedrockProtocol.class);
+        PacketFactory.sendBedrockLoadingScreen(user, ServerboundLoadingScreenPacketType.StartLoadingScreen, null);
     }
 
     private static void handleJavaClientGameJoin(final UserConnection user) {

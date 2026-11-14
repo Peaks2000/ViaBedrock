@@ -598,15 +598,15 @@ public final class InventoryPackets {
                 return;
             }
 
+            final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
             final Form form;
             try {
-                form = FormSerializer.deserialize(data);
+                form = FormSerializer.deserialize(data.contains("\"rawtext\"") ? FormText.resolveRawText(resourcePackStorage, data) : data);
             } catch (final Throwable e) { // Bedrock client shows error modal form
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Error while deserializing form data: " + data, e);
                 wrapper.cancel();
                 return;
             }
-            final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
             form.setTranslator(resourcePackStorage.getTexts()::translate);
             inventoryTracker.setCurrentForm(IntObjectPair.of(id, form));
 
