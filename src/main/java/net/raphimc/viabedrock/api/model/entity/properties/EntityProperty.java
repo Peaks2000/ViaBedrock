@@ -19,6 +19,8 @@ package net.raphimc.viabedrock.api.model.entity.properties;
 
 public interface EntityProperty {
 
+    String identifier();
+
     record BooleanProperty(String identifier) implements EntityProperty { }
 
     record IntProperty(String identifier, int minValue, int maxValue) implements EntityProperty { }

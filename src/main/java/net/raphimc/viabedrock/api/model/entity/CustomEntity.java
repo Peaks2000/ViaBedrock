@@ -30,6 +30,7 @@ import com.viaversion.viaversion.api.type.Types;
 import com.viaversion.viaversion.api.type.types.version.VersionedTypes;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
 import net.raphimc.viabedrock.ViaBedrock;
+import net.raphimc.viabedrock.api.model.entity.properties.EntityProperty;
 import net.raphimc.viabedrock.api.modinterface.ViaBedrockUtilityInterface;
 import net.raphimc.viabedrock.api.resourcepack.definition.EntityDefinitions;
 import net.raphimc.viabedrock.api.util.MathUtil;
@@ -39,9 +40,11 @@ import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorDataIds;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorFlags;
 import net.raphimc.viabedrock.protocol.data.generated.java.EntityDataFields;
+import net.raphimc.viabedrock.protocol.model.EntityProperties;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomEntityResourceRewriter;
 import net.raphimc.viabedrock.protocol.storage.ChannelStorage;
+import net.raphimc.viabedrock.protocol.storage.EntityPropertyTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
 import org.cube.converter.data.bedrock.BedrockEntityData;
@@ -49,6 +52,7 @@ import org.cube.converter.data.bedrock.controller.BedrockRenderController;
 import team.unnamed.mocha.runtime.Scope;
 import team.unnamed.mocha.runtime.binding.JavaObjectBinding;
 import team.unnamed.mocha.runtime.standard.MochaMath;
+import team.unnamed.mocha.runtime.value.Function;
 import team.unnamed.mocha.runtime.value.MutableObjectBinding;
 import team.unnamed.mocha.runtime.value.Value;
 
@@ -70,6 +74,7 @@ public class CustomEntity extends Entity {
     private final Map<String, String> inverseGeometryMap = new HashMap<>();
     private final Map<String, String> inverseTextureMap = new HashMap<>();
     private final Scope entityScope = BASE_SCOPE.copy();
+    private final Map<String, Value> syncedProperties = new HashMap<>();
     private final List<EvaluatedModel> models = new ArrayList<>();
     private final List<ItemDisplayEntity> partEntities = new ArrayList<>();
     private boolean spawned;
@@ -110,6 +115,34 @@ public class CustomEntity extends Entity {
         this.entityScope.set("material", materialBinding);
 
         this.entityScope.readOnly(true);
+    }
+
+    public void updateProperties(final EntityProperties properties) {
+        final var tracker = this.user.get(EntityPropertyTracker.class);
+        final var schema = tracker.getEntityProperties(this.type());
+        if (schema == null) {
+            return;
+        }
+
+        for (final var entry : properties.intProperties().int2IntEntrySet()) {
+            final EntityProperty property = schema.intProperty(entry.getIntKey());
+            final int value = entry.getIntValue();
+            if (property instanceof EntityProperty.BooleanProperty) {
+                this.syncedProperties.put(property.identifier(), Value.of(value != 0));
+            } else if (property instanceof EntityProperty.EnumProperty enumProperty) {
+                if (value >= 0 && value < enumProperty.possibleValues().length) {
+                    this.syncedProperties.put(property.identifier(), Value.of(enumProperty.possibleValues()[value]));
+                }
+            } else if (property instanceof EntityProperty.IntProperty) {
+                this.syncedProperties.put(property.identifier(), Value.of(value));
+            }
+        }
+        for (final var entry : properties.floatProperties().int2ObjectEntrySet()) {
+            final var property = schema.floatProperty(entry.getIntKey());
+            if (property != null) {
+                this.syncedProperties.put(property.identifier(), Value.of(entry.getValue().doubleValue()));
+            }
+        }
     }
 
     @Override
@@ -236,6 +269,13 @@ public class CustomEntity extends Entity {
             queryBinding.set("is_onfire", Value.of(true));
         }
 
+        final Function<Void> property = (context, arguments) -> arguments.length() == 1
+            ? this.syncedProperties.getOrDefault(arguments.next().eval().getAsString(), Value.of(0))
+            : Value.of(0);
+        final Function<Void> hasProperty = (context, arguments) -> Value.of(arguments.length() == 1
+            && this.syncedProperties.containsKey(arguments.next().eval().getAsString()));
+        queryBinding.set("property", property);
+        queryBinding.set("has_property", hasProperty);
         queryBinding.block();
         executionScope.set("query", queryBinding);
         executionScope.set("q", queryBinding);
@@ -281,7 +321,7 @@ public class CustomEntity extends Entity {
             }
         }
 
-        if (!newModels.isEmpty() && !this.models.equals(newModels)) {
+        if (!this.models.equals(newModels)) {
             this.models.clear();
             this.models.addAll(newModels);
             return true;

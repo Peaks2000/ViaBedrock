@@ -44,7 +44,6 @@ import net.raphimc.viabedrock.protocol.storage.EntityPropertyTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.types.entitydata.EntityDataTypesBedrock;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
@@ -842,10 +841,9 @@ public final class EntityMetadataRewriter {
             return;
         }
 
-        final Iterator<EntityProperty> intIterator = expectedProperties.intProperties().iterator();
-
-        for (int i : properties.intProperties().values()) {
-            final EntityProperty property = intIterator.next();
+        for (final var entry : properties.intProperties().int2IntEntrySet()) {
+            final int i = entry.getIntValue();
+            final EntityProperty property = expectedProperties.intProperty(entry.getIntKey());
 
             if (property instanceof EntityProperty.BooleanProperty booleanProperty) {
                 final boolean value = i != 0;
@@ -881,6 +879,9 @@ public final class EntityMetadataRewriter {
 
                 ViaBedrock.getPlatform().getLogger().warning("Received int property " + integerProperty.identifier() + " for entity " + entity.type() + " with value " + value);
             } else if (property instanceof EntityProperty.EnumProperty enumProperty) {
+                if (i < 0 || i >= enumProperty.possibleValues().length) {
+                    continue;
+                }
                 final String value = enumProperty.possibleValues()[i];
 
                 switch (enumProperty.identifier()) {
@@ -1006,12 +1007,11 @@ public final class EntityMetadataRewriter {
             }
         }
 
-        final Iterator<EntityProperty.FloatProperty> floatIterator = expectedProperties.floatProperties().iterator();
-
-        for (float value : properties.floatProperties().values()) {
-            final EntityProperty.FloatProperty property = floatIterator.next();
-
-            ViaBedrock.getPlatform().getLogger().warning("Received float property " + property.identifier() + " for entity " + entity.type() + " with value " + value);
+        for (final var entry : properties.floatProperties().int2ObjectEntrySet()) {
+            final EntityProperty.FloatProperty property = expectedProperties.floatProperty(entry.getIntKey());
+            if (property != null) {
+                ViaBedrock.getPlatform().getLogger().warning("Received float property " + property.identifier() + " for entity " + entity.type() + " with value " + entry.getValue());
+            }
         }
     }
 

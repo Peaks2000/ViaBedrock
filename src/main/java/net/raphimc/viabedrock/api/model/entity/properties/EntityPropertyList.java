@@ -20,4 +20,12 @@ package net.raphimc.viabedrock.api.model.entity.properties;
 import java.util.List;
 
 public record EntityPropertyList(List<EntityProperty> intProperties, List<EntityProperty.FloatProperty> floatProperties) {
+
+    public EntityProperty intProperty(final int index) {
+        return index >= 0 && index < this.intProperties.size() ? this.intProperties.get(index) : null;
+    }
+
+    public EntityProperty.FloatProperty floatProperty(final int index) {
+        return index >= 0 && index < this.floatProperties.size() ? this.floatProperties.get(index) : null;
+    }
 }

@@ -102,7 +102,7 @@ public final class EntityPackets {
                 attributes[i] = new EntityAttribute(name, currentValue, minValue, maxValue);
             }
             final EntityData[] entityData = wrapper.read(BedrockTypes.ENTITY_DATA_ARRAY); // entity data
-            wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
+            final EntityProperties entityProperties = wrapper.read(BedrockTypes.ENTITY_PROPERTIES); // entity properties
             wrapper.read(BedrockTypes.ENTITY_LINK_ARRAY); // entity links
             wrapper.read(BedrockTypes.OPTIONAL_PASSENGER_OF_BLOCKS); // passenger of blocks
 
@@ -129,6 +129,9 @@ public final class EntityPackets {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Unknown bedrock entity type: " + type);
                 wrapper.cancel();
                 return;
+            }
+            if (entity instanceof CustomEntity customEntity) {
+                customEntity.updateProperties(entityProperties);
             }
             entity.setPosition(position);
             entity.setRotation(rotation);
@@ -525,8 +528,13 @@ public final class EntityPackets {
             }
 
             final List<EntityData> javaEntityData = new ArrayList<>();
-            entity.updateEntityData(entityData, javaEntityData);
-            entity.translateEntityProperties(entityProperties, javaEntityData);
+            if (entity instanceof CustomEntity customEntity) {
+                customEntity.updateProperties(entityProperties);
+                customEntity.updateEntityData(entityData, javaEntityData);
+            } else {
+                entity.updateEntityData(entityData, javaEntityData);
+                entity.translateEntityProperties(entityProperties, javaEntityData);
+            }
             wrapper.write(Types.VAR_INT, entity.javaId()); // entity id
             wrapper.write(VersionedTypes.V26_3.entityDataList, javaEntityData); // entity data
         });
