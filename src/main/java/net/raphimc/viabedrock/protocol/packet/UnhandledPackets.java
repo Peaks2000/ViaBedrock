@@ -55,7 +55,6 @@ public final class UnhandledPackets {
         protocol.cancelServerbound(ServerboundPackets26_3.COOKIE_RESPONSE);
         protocol.cancelServerbound(ServerboundPackets26_3.DEBUG_SUBSCRIPTION_REQUEST);
         protocol.cancelServerbound(ServerboundPackets26_3.KEEP_ALIVE);
-        protocol.cancelServerbound(ServerboundPackets26_3.PLAYER_LOADED);
         protocol.cancelServerbound(ServerboundPackets26_3.SET_TEST_BLOCK);
         protocol.cancelServerbound(ServerboundPackets26_3.TEST_INSTANCE_BLOCK_ACTION);
     }
