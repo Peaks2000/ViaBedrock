@@ -147,7 +147,8 @@ public class InventoryTracker extends StoredObject {
     }
 
     public void setCurrentContainerClosed(final boolean serverInitiated) {
-        if (serverInitiated) {
+        // A pending close already sent its Bedrock packet.
+        if (serverInitiated && this.currentContainer != null) {
             PacketFactory.sendBedrockContainerClose(this.user(), this.currentContainer.containerId(), ContainerType.NONE);
         }
         this.currentContainer = null;
