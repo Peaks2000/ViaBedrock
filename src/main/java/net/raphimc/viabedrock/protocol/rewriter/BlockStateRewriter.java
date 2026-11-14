@@ -236,6 +236,11 @@ public class BlockStateRewriter implements StorableObject {
         return this.legacyBlockStateIdMappings.get(legacyBlockStateId);
     }
 
+    public boolean isGeyserBlockStateAlias(final int runtimeId) {
+        final BlockState state = this.blockState(runtimeId);
+        return state != null && GEYSER_BLOCK_STATE_ALIASES.containsKey(state);
+    }
+
     public int javaId(final int bedrockBlockStateId) {
         return this.blockStateIdMappings.get(bedrockBlockStateId);
     }

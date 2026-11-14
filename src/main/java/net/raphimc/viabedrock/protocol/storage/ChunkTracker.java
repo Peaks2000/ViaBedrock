@@ -260,6 +260,10 @@ public class ChunkTracker extends StoredObject {
     }
 
     private CustomBlockModel customBlockModel(final BlockStateRewriter rewriter, final int stateId) {
+        if (rewriter.isGeyserBlockStateAlias(stateId)) {
+            return null;
+        }
+
         final ResourcePackStorage packs = this.user().get(ResourcePackStorage.class);
         if (packs == null || !packs.isLoadedOnJavaClient()) {
             return null;
