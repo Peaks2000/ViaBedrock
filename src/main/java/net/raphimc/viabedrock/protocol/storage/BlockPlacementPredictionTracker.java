@@ -54,12 +54,18 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
 
     public void track(final int sequence, final BlockPosition clickedPosition,
                       final BlockPosition expectedUpdatePosition, final long nowNanos) {
-        this.track(sequence, clickedPosition, expectedUpdatePosition, nowNanos, PredictionKind.PLACEMENT);
+        this.trackPlacement(sequence, clickedPosition, expectedUpdatePosition, 0, nowNanos);
+    }
+
+    public void trackPlacement(final int sequence, final BlockPosition clickedPosition,
+                               final BlockPosition expectedUpdatePosition, final int predictedBlockState,
+                               final long nowNanos) {
+        this.track(sequence, clickedPosition, expectedUpdatePosition, predictedBlockState, nowNanos, PredictionKind.PLACEMENT);
     }
 
     private void track(final int sequence, final BlockPosition clickedPosition,
-                       final BlockPosition expectedUpdatePosition, final long nowNanos,
-                       final PredictionKind kind) {
+                       final BlockPosition expectedUpdatePosition, final int predictedBlockState,
+                       final long nowNanos, final PredictionKind kind) {
         if (sequence <= this.lastSentAcknowledgement) {
             return;
         }
@@ -69,7 +75,7 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
             }
         }
         this.pendingPlacements.addLast(new PendingPlacement(
-            sequence, clickedPosition, expectedUpdatePosition, nowNanos, kind
+            sequence, clickedPosition, expectedUpdatePosition, predictedBlockState, nowNanos, kind
         ));
         final Deque<RecentBlockSound> sounds = kind == PredictionKind.PLACEMENT
             ? this.recentPlacementSounds : this.recentBreakSounds;
@@ -85,7 +91,22 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
      * but only the broken position can confirm or resynchronize the prediction.
      */
     public void trackBreaking(final int sequence, final BlockPosition position, final long nowNanos) {
-        this.track(sequence, position, position, nowNanos, PredictionKind.BREAKING);
+        this.track(sequence, position, position, 0, nowNanos, PredictionKind.BREAKING);
+    }
+
+    /** Supplies the clicked state when Java builds on a placement the server has not confirmed yet. */
+    public int predictedBlockState(final BlockPosition position, final int authoritativeState, final int airState,
+                                   final long nowNanos) {
+        if (authoritativeState == airState) {
+            final Iterator<PendingPlacement> iterator = this.pendingPlacements.descendingIterator();
+            while (iterator.hasNext()) {
+                final PendingPlacement pending = iterator.next();
+                if (!pending.resolved && pending.matches(position) && nowNanos - pending.startedAtNanos < this.timeoutNanos) {
+                    return pending.predictedBlockState != 0 ? pending.predictedBlockState : authoritativeState;
+                }
+            }
+        }
+        return authoritativeState;
     }
 
     /**
@@ -145,9 +166,12 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         return this.consumeSound(this.recentBreakSounds, position, nowNanos);
     }
 
-    public void clearSoundPredictions() {
+    public void clearPredictionsForDimensionChange() {
         this.recentPlacementSounds.clear();
         this.recentBreakSounds.clear();
+        for (PendingPlacement pending : this.pendingPlacements) {
+            pending.predictedBlockState = 0;
+        }
     }
 
     private boolean consumeSound(final Deque<RecentBlockSound> sounds,
@@ -220,14 +244,16 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         private final BlockPosition expectedUpdatePosition;
         private final long startedAtNanos;
         private final PredictionKind kind;
+        private int predictedBlockState;
         private boolean resolved;
 
         private PendingPlacement(final int sequence, final BlockPosition clickedPosition,
-                                 final BlockPosition expectedUpdatePosition, final long startedAtNanos,
-                                 final PredictionKind kind) {
+                                 final BlockPosition expectedUpdatePosition, final int predictedBlockState,
+                                 final long startedAtNanos, final PredictionKind kind) {
             this.sequence = sequence;
             this.clickedPosition = clickedPosition;
             this.expectedUpdatePosition = expectedUpdatePosition;
+            this.predictedBlockState = predictedBlockState;
             this.startedAtNanos = startedAtNanos;
             this.kind = kind;
         }

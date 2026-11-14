@@ -87,7 +87,10 @@ public final class MovementPredictionTracker {
         // must not move a later grounded prediction through its new support (for example a
         // bridge block). Corrections for the current tick always use the server height.
         final boolean crouchTakeoff = verticalStabilizationInput && correctedSnapshot.onGround() && authoritativeOnGround && !currentOnGround;
-        final boolean laterLanding = currentOnGround && !correctedSnapshot.onGround();
+        final boolean movedHorizontally = Math.abs(laterMovement.x()) > CORRECTION_EPSILON
+            || Math.abs(laterMovement.z()) > CORRECTION_EPSILON;
+        final boolean laterLanding = currentOnGround && (!correctedSnapshot.onGround()
+            || (movedHorizontally && !authoritativeOnGround && correctionDelta.y() < -CORRECTION_EPSILON));
         final boolean stabilizeVertical = historical && (continuousVerticalMovement
             || (laterVerticalDescent && currentOnGround) || laterLanding
             || (laterNonAscendingPosition && verticalStabilizationInput) || crouchTakeoff);

@@ -173,7 +173,7 @@ public final class WorldPackets {
                 ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received CHANGE_DIMENSION packet for the same dimension");
             }
 
-            wrapper.user().get(BlockPlacementPredictionTracker.class).clearSoundPredictions();
+            wrapper.user().get(BlockPlacementPredictionTracker.class).clearPredictionsForDimensionChange();
             wrapper.user().put(new ChunkTracker(wrapper.user(), dimension));
             final EntityTracker oldEntityTracker = wrapper.user().get(EntityTracker.class);
             final ClientPlayerEntity clientPlayer = oldEntityTracker.getClientPlayer();

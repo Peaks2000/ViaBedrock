@@ -47,8 +47,9 @@ import net.raphimc.viabedrock.protocol.model.inventory.InventoryActionData;
 import net.raphimc.viabedrock.protocol.model.inventory.InventorySource;
 import net.raphimc.viabedrock.protocol.model.inventory.InventoryTransactionData;
 import net.raphimc.viabedrock.protocol.rewriter.InventoryTransactionRewriter;
-import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
+import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
 import net.raphimc.viabedrock.protocol.storage.BlockPlacementPredictionTracker;
+import net.raphimc.viabedrock.protocol.storage.ChunkTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.InventoryTracker;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
@@ -204,8 +205,14 @@ public final class InteractionPackets {
                 PacketFactory.sendJavaBlockChangedAck(wrapper.user(), sequence);
                 return;
             }
-            wrapper.user().get(BlockPlacementPredictionTracker.class).track(
-                sequence, position, insideBlock ? position : position.getRelative(face), System.nanoTime());
+            final InventoryContainer inventory = inventoryTracker.getInventoryContainer();
+            final BedrockItem heldItem = inventory.getSelectedHotbarItem();
+            final BlockPlacementPredictionTracker predictions = wrapper.user().get(BlockPlacementPredictionTracker.class);
+            final long now = System.nanoTime();
+            final int clickedState = predictions.predictedBlockState(
+                position, chunkTracker.getBlockState(position), chunkTracker.bedrockAirId(), now);
+            final int placedState = wrapper.user().get(ItemRewriter.class).fixedPlacementBlockState(heldItem);
+            predictions.trackPlacement(sequence, position, insideBlock ? position : position.getRelative(face), placedState, now);
             PacketFactory.sendJavaBlockChangedAck(wrapper.user(), sequence);
 
             // The bedrock client will send a start item use on action to the server first.
@@ -221,7 +228,7 @@ public final class InteractionPackets {
             // This is the main packet that the bedrock client use to interact with block.The rest of the
             final PacketWrapper transactionPacket = PacketWrapper.create(ServerboundBedrockPackets.INVENTORY_TRANSACTION, wrapper.user());
 
-            BedrockItem predictedToItem = inventoryTracker.getInventoryContainer().getSelectedHotbarItem().copy();
+            BedrockItem predictedToItem = heldItem.copy();
             // This is not entirely correct, but at least it's more accurate than not sending actions or sending the original item data.
             if (predictedToItem.blockRuntimeId() != 0 && clientPlayer.javaGameMode() != GameMode.CREATIVE) {
                 predictedToItem.setAmount(predictedToItem.amount() - 1);
@@ -236,8 +243,8 @@ public final class InteractionPackets {
                 List.of(
                     new InventoryActionData(
                         new InventorySource(InventorySourceType.Container_Inventory, ContainerID.CONTAINER_ID_INVENTORY.getValue(), InventorySourceFlags.No_Flag),
-                        inventoryTracker.getInventoryContainer().getSelectedHotbarSlot(),
-                        inventoryTracker.getInventoryContainer().getSelectedHotbarItem(),
+                        inventory.getSelectedHotbarSlot(),
+                        heldItem,
                         predictedToItem
                     )
                 ),
@@ -247,12 +254,12 @@ public final class InteractionPackets {
                     ItemUseTriggerType.Player_Input,
                     position,
                     faceInt,
-                    inventoryTracker.getInventoryContainer().getSelectedHotbarSlot(),
+                    inventory.getSelectedHotbarSlot(),
                     HandSlot.Mainhand,
-                    inventoryTracker.getInventoryContainer().getSelectedHotbarItem(),
+                    heldItem,
                     clientPlayer.position(),
                     clickPosition,
-                    chunkTracker.getBlockState(position),
+                    clickedState,
                     ItemUsePredictedResult.Success,
                     ItemUseClientCooldownState.Off
                 )

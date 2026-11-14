@@ -122,6 +122,12 @@ public class ItemRewriter extends StoredObject {
         this.newItemArrayType = new ArrayType<>(this.newItemType, BedrockTypes.UNSIGNED_VAR_INT);
     }
 
+    public int fixedPlacementBlockState(final BedrockItem item) {
+        final IntSortedSet validStates = this.blockItemValidBlockStates.get(item.identifier());
+        return validStates != null && validStates.size() == 1 && validStates.contains(item.blockRuntimeId())
+            ? item.blockRuntimeId() : 0;
+    }
+
     public Item javaItem(final BedrockItem bedrockItem) {
         if (bedrockItem.isEmpty()) {
             return StructuredItem.empty();
