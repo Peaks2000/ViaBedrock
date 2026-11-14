@@ -769,7 +769,7 @@ public class ChunkTracker extends StoredObject {
             final Throwable error = failure;
             this.user().getChannel().eventLoop().execute(() -> {
                 this.pendingLightComputations.remove(chunkKey);
-                if (!this.user().getChannel().isActive()) {
+                if (!this.user().getChannel().isActive() || !this.isCurrentDimension()) {
                     return;
                 }
                 if (error != null) {
@@ -886,7 +886,16 @@ public class ChunkTracker extends StoredObject {
         return empty;
     }
 
+    private boolean isCurrentDimension() {
+        return this.user().get(ChunkTracker.class) == this;
+    }
+
     public void tick() {
+        // A dimension change can replace this tracker while its tick waits in the connection queue.
+        if (!this.isCurrentDimension()) {
+            return;
+        }
+
         // Keep request preparation and Java chunk sends within the same per-tick time budget.
         final long deadline = System.nanoTime() + 30_000_000L;
         // Realms can send chunk headers before it confirms the initial spawn.
