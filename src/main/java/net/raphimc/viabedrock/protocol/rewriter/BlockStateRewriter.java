@@ -41,6 +41,12 @@ import java.util.stream.Collectors;
 
 public class BlockStateRewriter implements StorableObject {
 
+    // Geyser registers vanilla obsidian with custom Bedrock mining behavior.
+    private static final Map<BlockState, BlockState> GEYSER_BLOCK_STATE_ALIASES = Map.of(
+        BlockState.fromString("geyser_custom:obsidian"), BlockState.fromString("minecraft:obsidian"),
+        BlockState.fromString("geyser_custom:crying_obsidian"), BlockState.fromString("minecraft:crying_obsidian")
+    );
+
     private final Int2IntMap blockStateIdMappings = new Int2IntOpenHashMap(); // Bedrock -> Java
     private final Int2IntMap legacyBlockStateIdMappings = new Int2IntOpenHashMap(); // Bedrock -> Bedrock
     private final BiMap<BlockState, Integer> blockStateMappings = HashBiMap.create(); // Bedrock -> Bedrock
@@ -171,8 +177,10 @@ public class BlockStateRewriter implements StorableObject {
                 this.blockStateTags.put(bedrockId, blockTags.get(bedrockBlockState.namespacedIdentifier()));
             }
 
-            if (bedrockToJavaBlockStates.containsKey(bedrockBlockState)) {
-                final int javaId = javaBlockStates.get(bedrockToJavaBlockStates.get(bedrockBlockState));
+            final BlockState mappingKey = GEYSER_BLOCK_STATE_ALIASES.getOrDefault(bedrockBlockState, bedrockBlockState);
+            final BlockState javaBlockState = bedrockToJavaBlockStates.get(mappingKey);
+            if (javaBlockState != null) {
+                final int javaId = javaBlockStates.get(javaBlockState);
                 this.blockStateIdMappings.put(bedrockId, javaId);
             } else {
                 missingBlockStateMappingCount++;
