@@ -18,7 +18,7 @@ permissions:
 
 env:
   VIAFABRICPLUS_REPOSITORY: Peaks2000/ViaFabricPlusPeaks
-  VIAFABRICPLUS_REF: next/v5
+  VIAFABRICPLUS_REF: main
 
 jobs:
   consumer:
