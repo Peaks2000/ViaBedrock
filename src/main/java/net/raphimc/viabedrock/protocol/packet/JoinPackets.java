@@ -36,6 +36,7 @@ import com.viaversion.viaversion.protocols.base.ClientboundLoginPackets;
 import com.viaversion.viaversion.protocols.base.v1_7.ClientboundBaseProtocol1_7;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundConfigurationPackets26_3;
 import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ClientboundPackets26_3;
+import com.viaversion.viaversion.protocols.v26_2to26_3.packet.ServerboundPackets26_3;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.model.entity.ClientPlayerEntity;
 import net.raphimc.viabedrock.api.resourcepack.definition.ItemDefinitions;
@@ -118,6 +119,10 @@ public final class JoinPackets {
     };
 
     public static void register(final BedrockProtocol protocol) {
+        protocol.registerServerbound(ServerboundPackets26_3.PLAYER_LOADED, null, wrapper -> {
+            wrapper.cancel();
+            finishInitialSpawn(wrapper.user());
+        });
         protocol.registerClientboundTransition(ClientboundBedrockPackets.PLAY_STATUS,
             State.LOGIN, (PacketHandler) wrapper -> {
                 final int rawStatus = wrapper.read(Types.INT); // status
@@ -156,26 +161,7 @@ public final class JoinPackets {
                     sendClientCacheStatus(wrapper.user());
                 } else if (status == PlayStatus.PlayerSpawn) {
                     wrapper.cancel();
-                    final ClientPlayerEntity clientPlayer = wrapper.user().get(EntityTracker.class).getClientPlayer();
-                    if (clientPlayer.isInitiallySpawned()) {
-                        return;
-                    }
-
-                    final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, wrapper.user());
-                    interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.InteractUpdate.getValue()); // action
-                    interact.write(BedrockTypes.UNSIGNED_VAR_LONG, 0L); // target entity runtime id
-                    interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
-                    interact.sendToServer(BedrockProtocol.class);
-
-                    clientPlayer.setRotation(new Position3f(clientPlayer.rotation().x(), clientPlayer.rotation().y(), clientPlayer.rotation().y()));
-                    clientPlayer.setInitiallySpawned();
-
-                    PacketFactory.sendBedrockLoadingScreen(wrapper.user(), ServerboundLoadingScreenPacketType.EndLoadingScreen, null);
-                    final PacketWrapper setLocalPlayerAsInitialized = PacketWrapper.create(ServerboundBedrockPackets.SET_LOCAL_PLAYER_AS_INITIALIZED, wrapper.user());
-                    setLocalPlayerAsInitialized.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
-                    setLocalPlayerAsInitialized.sendToServer(BedrockProtocol.class);
-
-                    PacketFactory.sendJavaGameEvent(wrapper.user(), GameEventType.LEVEL_CHUNKS_LOAD_START, 0F);
+                    finishInitialSpawn(wrapper.user());
                 } else {
                     wrapper.setPacketType(ClientboundPackets26_3.DISCONNECT);
                     writePlayStatusKickMessage(wrapper, status);
@@ -509,6 +495,27 @@ public final class JoinPackets {
         }
     }
 
+    private static void finishInitialSpawn(final UserConnection user) {
+        final ClientPlayerEntity clientPlayer = user.get(EntityTracker.class).getClientPlayer();
+        if (clientPlayer.isInitiallySpawned()) {
+            return;
+        }
+
+        final PacketWrapper interact = PacketWrapper.create(ServerboundBedrockPackets.INTERACT, user);
+        interact.write(Types.UNSIGNED_BYTE, (short) InteractPacketPayload_Action.InteractUpdate.getValue()); // action
+        interact.write(BedrockTypes.UNSIGNED_VAR_LONG, 0L); // target entity runtime id
+        interact.write(BedrockTypes.OPTIONAL_POSITION_3F, null); // position
+        interact.sendToServer(BedrockProtocol.class);
+
+        clientPlayer.setRotation(new Position3f(clientPlayer.rotation().x(), clientPlayer.rotation().y(), clientPlayer.rotation().y()));
+        clientPlayer.setInitiallySpawned();
+
+        PacketFactory.sendBedrockLoadingScreen(user, ServerboundLoadingScreenPacketType.EndLoadingScreen, null);
+        final PacketWrapper setLocalPlayerAsInitialized = PacketWrapper.create(ServerboundBedrockPackets.SET_LOCAL_PLAYER_AS_INITIALIZED, user);
+        setLocalPlayerAsInitialized.write(BedrockTypes.UNSIGNED_VAR_LONG, clientPlayer.runtimeId()); // entity runtime id
+        setLocalPlayerAsInitialized.sendToServer(BedrockProtocol.class);
+    }
+
     private static void handleJavaClientGameJoin(final UserConnection user) {
         final JoinGameStorage joinGameStorage = user.get(JoinGameStorage.class);
         final GameSessionStorage gameSession = user.get(GameSessionStorage.class);
@@ -574,6 +581,9 @@ public final class JoinPackets {
         joinGame.write(Types.BOOLEAN, false); // online mode
         joinGame.write(Types.BOOLEAN, false); // enforces secure chat
         joinGame.send(BedrockProtocol.class);
+
+        // Java waits for this signal before it checks whether the spawn chunk has rendered.
+        PacketFactory.sendJavaGameEvent(user, GameEventType.LEVEL_CHUNKS_LOAD_START, 0F);
 
         clientPlayer.createTeam();
         clientPlayer.sendInitialEntityData();

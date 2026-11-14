@@ -816,7 +816,8 @@ public class ChunkTracker extends StoredObject {
     public void tick() {
         // Keep request preparation and Java chunk sends within the same per-tick time budget.
         final long deadline = System.nanoTime() + 30_000_000L;
-        if (this.user().get(EntityTracker.class) != null && this.user().get(EntityTracker.class).getClientPlayer().isInitiallySpawned()) {
+        // Realms can send chunk headers before it confirms the initial spawn.
+        if (!this.subChunkRequests.isEmpty()) {
             this.subChunkRequests.removeIf(s -> !this.isInLoadDistance(s.chunkX, s.chunkZ));
             this.queuedSubChunkRequests.removeIf(s -> !this.isInLoadDistance(s.chunkX, s.chunkZ));
             this.refreshSubChunks.removeIf(s -> !this.isInLoadDistance(s.chunkX, s.chunkZ));
