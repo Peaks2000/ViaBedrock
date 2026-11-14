@@ -49,6 +49,7 @@ public class ResourcePackLoadStateTracker extends StoredObject {
     }, null, true);
     private final CompletableFuture<Void> loadFuture = new CompletableFuture<>();
     private boolean javaClientAccepted;
+    private boolean javaLoadStarted;
 
     public ResourcePackLoadStateTracker(final UserConnection user, final ResourcePackLoadStateTracker.Info[] infos) {
         super(user);
@@ -129,6 +130,9 @@ public class ResourcePackLoadStateTracker extends StoredObject {
                 throw new RuntimeException(e);
             }
         }, this.executor).thenRun(() -> {
+            if (this.loadFuture.isDone()) {
+                return;
+            }
             if (!downloadList.isEmpty()) {
                 ViaBedrock.getPlatform().getLogger().log(Level.INFO, "Downloading " + downloadList.size() + " resource packs over the game protocol");
                 final PacketWrapper resourcePackClientResponse = PacketWrapper.create(ServerboundBedrockPackets.RESOURCE_PACK_CLIENT_RESPONSE, this.user());
@@ -169,8 +173,17 @@ public class ResourcePackLoadStateTracker extends StoredObject {
         return this.javaClientAccepted;
     }
 
-    public void setJavaClientAccepted() {
+    public boolean beginJavaClientLoad() {
+        if (this.javaLoadStarted) {
+            return false;
+        }
+        this.javaLoadStarted = true;
         this.javaClientAccepted = true;
+        return true;
+    }
+
+    public void cancelJavaClientLoad() {
+        this.javaClientAccepted = false;
     }
 
     public record Info(ResourcePack.Key key, byte[] contentKey, String contentId, URL httpUrl) {
