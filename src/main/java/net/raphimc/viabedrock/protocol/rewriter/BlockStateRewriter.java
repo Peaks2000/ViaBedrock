@@ -27,12 +27,14 @@ import com.viaversion.viaversion.libs.fastutil.objects.Object2ObjectOpenHashMap;
 import com.viaversion.viaversion.util.Key;
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.chunk.blockstate.BlockStateSanitizer;
+import net.raphimc.viabedrock.api.chunk.light.LightEngine;
 import net.raphimc.viabedrock.api.model.BedrockBlockState;
 import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.api.util.BlockStateHasher;
 import net.raphimc.viabedrock.api.util.CombinationUtil;
 import net.raphimc.viabedrock.api.util.HashedPaletteComparator;
 import net.raphimc.viabedrock.protocol.BedrockProtocol;
+import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viabedrock.protocol.model.BlockProperties;
 
 import java.util.*;
@@ -47,6 +49,7 @@ public class BlockStateRewriter implements StorableObject {
         BlockState.fromString("geyser_custom:crying_obsidian"), BlockState.fromString("minecraft:crying_obsidian")
     );
 
+    private final Int2IntMap lightOverrides = new Int2IntOpenHashMap();
     private final Int2IntMap blockStateIdMappings = new Int2IntOpenHashMap(); // Bedrock -> Java
     private final Int2IntMap legacyBlockStateIdMappings = new Int2IntOpenHashMap(); // Bedrock -> Bedrock
     private final BiMap<BlockState, Integer> blockStateMappings = HashBiMap.create(); // Bedrock -> Bedrock
@@ -243,6 +246,17 @@ public class BlockStateRewriter implements StorableObject {
 
     public int javaId(final int bedrockBlockStateId) {
         return this.blockStateIdMappings.get(bedrockBlockStateId);
+    }
+
+    public void setLightOverride(final int bedrockId, final int emission, final int opacity) {
+        final int javaId = Math.max(ProtocolConstants.JAVA_AIR_ID, this.javaId(bedrockId));
+        final int effectiveEmission = emission >= 0 ? emission : BedrockProtocol.MAPPINGS.getJavaBlockLightEmission()[javaId];
+        final int effectiveOpacity = opacity >= 0 ? opacity : BedrockProtocol.MAPPINGS.getJavaBlockOpacity()[javaId];
+        this.lightOverrides.put(bedrockId, LightEngine.lightOverride(effectiveEmission, effectiveOpacity));
+    }
+
+    public int lightState(final int bedrockId) {
+        return this.lightOverrides.getOrDefault(bedrockId, Math.max(ProtocolConstants.JAVA_AIR_ID, this.javaId(bedrockId)));
     }
 
     public boolean isKelp(final int bedrockBlockStateId) {

@@ -42,11 +42,24 @@ public final class LightEngine {
     private LightEngine() {
     }
 
+    /** Encodes per-state Bedrock lighting alongside the nonnegative Java state IDs. */
+    public static int lightOverride(final int emission, final int opacity) {
+        return -1 - ((emission << 4) | opacity);
+    }
+
+    private static byte emission(final int state, final byte[] table) {
+        return state >= 0 ? table[state] : (byte) ((-1 - state) >>> 4);
+    }
+
+    private static byte opacity(final int state, final byte[] table) {
+        return state >= 0 ? table[state] : (byte) ((-1 - state) & 15);
+    }
+
     /**
      * Computes the light of all chunks of a 3x3 chunk region. The lighting needs of every chunk in
      * the region are fully covered by the region, as light travels at most 15 blocks.
      *
-     * @param regionStates  The java block states of the region, indexed as
+     * @param regionStates  Java block states or encoded Bedrock light overrides, indexed as
      *                      {@code [chunkIndex][sectionIndex][blockIndex]} where
      *                      {@code chunkIndex = (chunkZOffset + 1) * 3 + (chunkXOffset + 1)} and
      *                      {@code blockIndex = y * 256 | z * 16 | x}. Chunks and sections that have
@@ -132,8 +145,8 @@ public final class LightEngine {
                     }
                 }
                 if (singleState) { // Fast path for uniform sections, e.g. all air
-                    final byte opacityValue = opacityTable[javaId0];
-                    final byte emissionValue = emissionTable[javaId0];
+                    final byte opacityValue = opacity(javaId0, opacityTable);
+                    final byte emissionValue = emission(javaId0, emissionTable);
                     for (int y = 0; y < 16; y++) {
                         final int layerBase = ((sectionIndex << 4) + y) * REGION_SIZE_SQUARED;
                         for (int z = 0; z < 16; z++) {
@@ -153,8 +166,8 @@ public final class LightEngine {
                         final int statesIndex = statesBase | (z << 4);
                         for (int x = 0; x < 16; x++) {
                             final int stateId = states[statesIndex + x];
-                            opacity[regionIndex + x] = opacityTable[stateId];
-                            emission[regionIndex + x] = emissionTable[stateId];
+                            opacity[regionIndex + x] = opacity(stateId, opacityTable);
+                            emission[regionIndex + x] = emission(stateId, emissionTable);
                         }
                     }
                 }

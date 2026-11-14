@@ -64,6 +64,50 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
         return getItemModel("network/" + identifier);
     }
 
+    public static void registerNetworkBlockLighting(final BlockProperties[] definitions, final BlockStateRewriter rewriter) {
+        final Set<String> seen = new HashSet<>();
+        for (final BlockProperties definition : definitions) {
+            final String identifier = definition.name().toLowerCase(Locale.ROOT);
+            if (!seen.add(identifier) || identifier.startsWith("minecraft:")) {
+                continue;
+            }
+            final var states = rewriter.validBlockStates(identifier);
+            if (states == null) {
+                continue;
+            }
+
+            final CompoundTag base = definition.properties().getCompoundTag("components");
+            final var permutationTags = definition.properties().getListTag("permutations", CompoundTag.class);
+            if (!hasLighting(base) && (permutationTags == null
+                || permutationTags.getValue().stream().noneMatch(tag -> hasLighting(tag.getCompoundTag("components"))))) {
+                continue;
+            }
+
+            final List<Permutation> permutations = permutations(definition.properties());
+            for (final int stateId : states) {
+                final CompoundTag components = effectiveComponents(base, permutations, rewriter.blockState(stateId));
+                final int emission = lightComponent(components, "minecraft:light_emission", "emission");
+                final int opacity = lightComponent(components, "minecraft:light_dampening", "lightLevel");
+                if (emission >= 0 || opacity >= 0) {
+                    rewriter.setLightOverride(stateId, emission, opacity);
+                }
+            }
+        }
+    }
+
+    private static boolean hasLighting(final CompoundTag components) {
+        return components != null && (components.contains("minecraft:light_emission") || components.contains("minecraft:light_dampening"));
+    }
+
+    private static int lightComponent(final CompoundTag components, final String name, final String valueName) {
+        final var component = components.get(name);
+        final var number = component instanceof CompoundTag compound ? compound.get(valueName) : component;
+        if (number instanceof NumberTag tag && tag.asInt() >= 0 && tag.asInt() <= 15) {
+            return tag.asInt();
+        }
+        return -1;
+    }
+
     public static Content convertNetworkBlocks(final ResourcePackStorage packs, final BlockProperties[] definitions,
                                                final BlockStateRewriter rewriter) {
         final var converter = new CustomBlockResourceRewriter();

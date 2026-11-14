@@ -808,16 +808,16 @@ public class ChunkTracker extends StoredObject {
         final int[][] chunkStates = this.getJavaBlockStates(chunk);
         int[] states = chunkStates[sectionIndex];
         if (states == null) {
-            states = chunkStates[sectionIndex] = this.buildJavaBlockStates(chunk.getSections()[sectionIndex]);
+            states = chunkStates[sectionIndex] = this.buildLightStates(chunk.getSections()[sectionIndex]);
         }
         return states;
     }
 
     /**
-     * Converts the bedrock block states of a chunk section into java block states, indexed with
+     * Converts the Bedrock block states into Java block states or custom light overrides, indexed with
      * {@code y * 256 | z * 16 | x}.
      */
-    private int[] buildJavaBlockStates(final BedrockChunkSection section) {
+    private int[] buildLightStates(final BedrockChunkSection section) {
         final int[] states = new int[ChunkSection.SIZE];
         final List<DataPalette> blockPalettes = section.palettes(PaletteType.BLOCKS);
         if (blockPalettes.isEmpty()) {
@@ -826,20 +826,19 @@ public class ChunkTracker extends StoredObject {
 
         final BlockStateRewriter blockStateRewriter = this.user().get(BlockStateRewriter.class);
         final DataPalette layer0 = blockPalettes.get(0);
-        final int[] entryJavaIds = new int[layer0.size()];
-        for (int i = 0; i < entryJavaIds.length; i++) {
-            final int javaId = blockStateRewriter.javaId(layer0.idByIndex(i));
-            entryJavaIds[i] = javaId != -1 ? javaId : ProtocolConstants.JAVA_AIR_ID;
+        final int[] entryLightStates = new int[layer0.size()];
+        for (int i = 0; i < entryLightStates.length; i++) {
+            entryLightStates[i] = blockStateRewriter.lightState(layer0.idByIndex(i));
         }
         if (layer0.size() == 1) {
-            if (entryJavaIds[0] != ProtocolConstants.JAVA_AIR_ID) {
-                Arrays.fill(states, entryJavaIds[0]);
+            if (entryLightStates[0] != ProtocolConstants.JAVA_AIR_ID) {
+                Arrays.fill(states, entryLightStates[0]);
             }
         } else {
             for (int y = 0; y < 16; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
-                        states[(y << 8) | (z << 4) | x] = entryJavaIds[layer0.paletteIndexAt(layer0.index(x, y, z))];
+                        states[(y << 8) | (z << 4) | x] = entryLightStates[layer0.paletteIndexAt(layer0.index(x, y, z))];
                     }
                 }
             }

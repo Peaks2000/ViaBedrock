@@ -375,7 +375,9 @@ public final class JoinPackets {
 
                 wrapper.user().put(new JoinGameStorage(levelName, difficulty, rainLevel, lightningLevel, currentTime, chunkTickRange));
                 wrapper.user().put(new GameRulesStorage(wrapper.user(), gameRules));
-                wrapper.user().put(new BlockStateRewriter(blockProperties, hashedRuntimeBlockIds));
+                final BlockStateRewriter blockStateRewriter = new BlockStateRewriter(blockProperties, hashedRuntimeBlockIds);
+                CustomBlockResourceRewriter.registerNetworkBlockLighting(blockProperties, blockStateRewriter);
+                wrapper.user().put(blockStateRewriter);
                 wrapper.user().put(new ItemRewriter(wrapper.user(), new ItemEntry[0]));
                 wrapper.user().put(new ChunkTracker(wrapper.user(), dimension));
                 final EntityTracker entityTracker = new EntityTracker(wrapper.user());
@@ -398,7 +400,7 @@ public final class JoinPackets {
                 final ResourcePackStorage packs = resourcePackStorage;
                 final Runnable finish = () -> finishBedrockJoin(user);
                 if (packs.isLoadedOnJavaClient()) {
-                    final var blockPack = CustomBlockResourceRewriter.convertNetworkBlocks(packs, blockProperties, user.get(BlockStateRewriter.class));
+                    final var blockPack = CustomBlockResourceRewriter.convertNetworkBlocks(packs, blockProperties, blockStateRewriter);
                     if (blockPack != null) {
                         final UUID id = UUID.randomUUID();
                         final UUID token = UUID.randomUUID();
