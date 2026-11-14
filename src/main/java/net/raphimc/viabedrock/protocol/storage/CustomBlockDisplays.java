@@ -43,7 +43,9 @@ final class CustomBlockDisplays {
 
     CustomBlockDisplays(final UserConnection user) {
         this.user = user;
-        if (user.isClientSide()) user.getChannel().attr(SLAB_CARRIERS).set(this.slabCarriers);
+        if (user.isClientSide()) {
+            user.getChannel().attr(SLAB_CARRIERS).set(this.slabCarriers);
+        }
     }
 
     boolean canRender(final String identifier) {
@@ -56,13 +58,17 @@ final class CustomBlockDisplays {
         this.updateSlabCarrier(position, model);
         Map<BlockPosition, Display> displays = this.chunks.get(chunkKey);
         final Display previous = displays != null ? displays.get(position) : null;
-        if (previous != null && previous.model().equals(model)) return;
+        if (previous != null && previous.model().equals(model)) {
+            return;
+        }
         if (previous != null) {
             displays.remove(position);
             this.remove(new int[]{previous.entityId()});
         }
         if (model != null) {
-            if (displays == null) displays = this.chunks.computeIfAbsent(chunkKey, ignored -> new HashMap<>());
+            if (displays == null) {
+                displays = this.chunks.computeIfAbsent(chunkKey, ignored -> new HashMap<>());
+            }
             displays.put(position, new Display(model, this.spawn(position, model)));
         } else if (displays != null && displays.isEmpty()) {
             this.chunks.remove(chunkKey);
@@ -84,23 +90,32 @@ final class CustomBlockDisplays {
                 .filter(entry -> !entry.getValue().model().equals(models.get(entry.getKey())))
                 .mapToInt(entry -> entry.getValue().entityId()).toArray();
             existing.entrySet().removeIf(entry -> {
-                if (entry.getValue().model().equals(models.get(entry.getKey()))) return false;
+                if (entry.getValue().model().equals(models.get(entry.getKey()))) {
+                    return false;
+                }
                 this.updateSlabCarrier(entry.getKey(), models.get(entry.getKey()));
                 return true;
             });
             this.remove(removed);
-            if (existing.isEmpty()) this.chunks.remove(key);
+            if (existing.isEmpty()) {
+                this.chunks.remove(key);
+            }
         }
         models.forEach(this::update);
     }
 
     private void updateSlabCarrier(final BlockPosition position, final CustomBlockModel model) {
-        if (!this.user.isClientSide()) return;
+        if (!this.user.isClientSide()) {
+            return;
+        }
         // Java's BlockPos packing is shared by both embedded runtimes and the renderer.
         final long packed = ((long) position.x() & 0x3FFFFFFL) << 38
             | ((long) position.z() & 0x3FFFFFFL) << 12 | (position.y() & 0xFFFL);
-        if (model != null && model.slabCarrier()) this.slabCarriers.add(packed);
-        else this.slabCarriers.remove(packed);
+        if (model != null && model.slabCarrier()) {
+            this.slabCarriers.add(packed);
+        } else {
+            this.slabCarriers.remove(packed);
+        }
     }
 
     private int spawn(final BlockPosition position, final CustomBlockModel model) {
@@ -141,11 +156,14 @@ final class CustomBlockDisplays {
     }
 
     private void remove(final int[] ids) {
-        if (ids.length == 0) return;
+        if (ids.length == 0) {
+            return;
+        }
         final PacketWrapper packet = PacketWrapper.create(ClientboundPackets26_3.REMOVE_ENTITIES, this.user);
         packet.write(Types.VAR_INT_ARRAY_PRIMITIVE, ids);
         packet.send(BedrockProtocol.class);
     }
 
     private record Display(CustomBlockModel model, int entityId) { }
+
 }

@@ -120,7 +120,9 @@ public class ResourcePackHttpServer {
             Thread.sleep(100);
         }
         final ResourcePackStorage storage = user.get(ResourcePackStorage.class);
-        if (storage == null) throw new IllegalStateException("Bedrock resource pack stack did not arrive");
+        if (storage == null) {
+            throw new IllegalStateException("Bedrock resource pack stack did not arrive");
+        }
         return ResourcePackRewriter.bedrockToJava(storage);
     }
 
@@ -146,8 +148,6 @@ public class ResourcePackHttpServer {
         }
     }
 
-    private record PackRequest(UserConnection user, Content content) { }
-
     public String getUrl() {
         final String overrideUrl = ViaBedrock.getConfig().getResourcePackUrl();
         if (!overrideUrl.isEmpty()) {
@@ -161,5 +161,7 @@ public class ResourcePackHttpServer {
     public Channel getChannel() {
         return this.channelFuture.channel();
     }
+
+    private record PackRequest(UserConnection user, Content content) { }
 
 }

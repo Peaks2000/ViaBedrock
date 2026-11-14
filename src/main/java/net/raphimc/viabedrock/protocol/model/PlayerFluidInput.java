@@ -14,4 +14,5 @@ public record PlayerFluidInput(boolean swimming, boolean inFluid, float velocity
     public static PlayerFluidInput decode(final float[] input) {
         return new PlayerFluidInput(input[0] != 0, input[1] != 0, input[2], input[3], input[4]);
     }
+
 }

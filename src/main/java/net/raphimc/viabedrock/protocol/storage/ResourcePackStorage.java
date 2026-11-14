@@ -110,8 +110,6 @@ public class ResourcePackStorage implements StorableObject {
         return this.blockPackLoaded ? this.customBlockItems.get(identifier) : null;
     }
 
-    public record CustomBlockModel(String identifier, String variant, float scale, int carrier, int rotationY, boolean slabCarrier) { }
-
     public void waitForBlockPack(final UUID id, final Runnable finish) {
         this.blockPackId = id;
         this.finishBlockPack = finish;
@@ -131,7 +129,9 @@ public class ResourcePackStorage implements StorableObject {
 
     public void finishBlockPack(final boolean loaded) {
         final Runnable finish = this.finishBlockPack;
-        if (finish == null) return;
+        if (finish == null) {
+            return;
+        }
         this.finishBlockPack = null;
         this.blockPackLoaded = loaded;
         finish.run();
@@ -192,5 +192,7 @@ public class ResourcePackStorage implements StorableObject {
     public RenderControllerDefinitions getRenderControllers() {
         return this.renderControllers;
     }
+
+    public record CustomBlockModel(String identifier, String variant, float scale, int carrier, int rotationY, boolean slabCarrier) { }
 
 }

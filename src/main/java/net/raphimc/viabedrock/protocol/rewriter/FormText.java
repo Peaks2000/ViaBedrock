@@ -21,6 +21,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import net.lenni0451.mcstructs_bedrock.text.components.TranslationBedrockComponent;
 import net.lenni0451.mcstructs_bedrock.text.serializer.BedrockComponentSerializer;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
@@ -48,9 +49,13 @@ public final class FormText {
     }
 
     private static void resolveRawText(final ResourcePackStorage packs, final JsonElement node, final int depth) {
-        if (depth > 24) return;
+        if (depth > 24) {
+            return;
+        }
         if (node instanceof JsonArray array) {
-            for (final JsonElement entry : array) resolveRawText(packs, entry, depth + 1);
+            for (final JsonElement entry : array) {
+                resolveRawText(packs, entry, depth + 1);
+            }
         } else if (node instanceof JsonObject object) {
             for (final var entry : object.entrySet()) {
                 final JsonElement value = entry.getValue();
@@ -58,7 +63,9 @@ public final class FormText {
                     entry.setValue(rawText(packs, value));
                 } else if (ARRAY_TEXT_FIELDS.contains(entry.getKey()) && value instanceof JsonArray entries) {
                     for (int i = 0; i < entries.size(); i++) {
-                        if (isRawText(entries.get(i))) entries.set(i, rawText(packs, entries.get(i)));
+                        if (isRawText(entries.get(i))) {
+                            entries.set(i, rawText(packs, entries.get(i)));
+                        }
                     }
                 } else if (value.isJsonArray()) {
                     resolveRawText(packs, value, depth + 1);
@@ -74,9 +81,11 @@ public final class FormText {
     private static JsonElement rawText(final ResourcePackStorage packs, final JsonElement json) {
         final var component = BedrockComponentSerializer.deserialize(json);
         component.forEach(part -> {
-            if (part instanceof TranslationBedrockComponent translation) translation.setTranslator(packs.getTexts().lookup());
+            if (part instanceof TranslationBedrockComponent translation) {
+                translation.setTranslator(packs.getTexts().lookup());
+            }
         });
-        return new com.google.gson.JsonPrimitive(component.asString());
+        return new JsonPrimitive(component.asString());
     }
 
     public static boolean isCubeCraftSelector(final ResourcePackStorage packs, final String title) {

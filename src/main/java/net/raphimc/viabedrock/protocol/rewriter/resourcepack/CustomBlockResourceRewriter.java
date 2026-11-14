@@ -6,10 +6,12 @@ package net.raphimc.viabedrock.protocol.rewriter.resourcepack;
 
 import com.viaversion.nbt.tag.CompoundTag;
 import com.viaversion.nbt.tag.NumberTag;
+import com.viaversion.nbt.tag.StringTag;
 import com.viaversion.viaversion.api.minecraft.item.data.ItemModel;
 import com.viaversion.viaversion.libs.gson.JsonObject;
 import com.viaversion.viaversion.util.Key;
 import net.raphimc.viabedrock.ViaBedrock;
+import net.raphimc.viabedrock.api.model.BedrockBlockState;
 import net.raphimc.viabedrock.api.model.BlockState;
 import net.raphimc.viabedrock.api.resourcepack.ResourcePack;
 import net.raphimc.viabedrock.api.resourcepack.content.Content;
@@ -70,12 +72,18 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
         int models = 0;
         for (final BlockProperties definition : definitions) {
             final String identifier = definition.name().toLowerCase(Locale.ROOT);
-            if (identifier.startsWith("minecraft:") || !seen.add(identifier)) continue;
+            if (identifier.startsWith("minecraft:") || !seen.add(identifier)) {
+                continue;
+            }
             final var states = rewriter.validBlockStates(identifier);
-            if (states == null) continue;
+            if (states == null) {
+                continue;
+            }
             final CompoundTag base = definition.properties().getCompoundTag("components");
             final List<Permutation> permutations = permutations(definition.properties());
-            if (base == null && permutations.isEmpty()) continue;
+            if (base == null && permutations.isEmpty()) {
+                continue;
+            }
 
             final ItemModelContent output = converter.new ItemModelContent("network/" + identifier);
             final Map<CompoundTag, CustomBlockModel> variants = new HashMap<>();
@@ -84,24 +92,34 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
                 final CompoundTag renderComponents = renderComponents(components);
                 CustomBlockModel model = variants.get(renderComponents);
                 if (model == null && !variants.containsKey(renderComponents)) {
-                    if (models >= MAX_NETWORK_MODELS) break;
+                    if (models >= MAX_NETWORK_MODELS) {
+                        break;
+                    }
                     try {
                         model = converter.addNetworkModel(packs, output, identifier, renderComponents, "state_" + variants.size());
                     } catch (final RuntimeException ignored) {
                         // A malformed optional model falls back to the first resource pack.
                     }
                     variants.put(renderComponents, model);
-                    if (model != null) models++;
+                    if (model != null) {
+                        models++;
+                    }
                 }
-                if (model != null) packs.addCustomBlockModel(stateId, model);
+                if (model != null) {
+                    packs.addCustomBlockModel(stateId, model);
+                }
             }
             if (variants.values().stream().anyMatch(java.util.Objects::nonNull)) {
                 output.generateItemDefinition();
                 merged.putAll(output);
             }
-            if (models >= MAX_NETWORK_MODELS) break;
+            if (models >= MAX_NETWORK_MODELS) {
+                break;
+            }
         }
-        if (models == 0) return null;
+        if (models == 0) {
+            return null;
+        }
         merged.putJson("pack.mcmeta", ResourcePackRewriter.createPackManifest());
         ViaBedrock.getPlatform().getLogger().info("Converted " + models + " Bedrock block geometry and material variants");
         return merged;
@@ -111,19 +129,25 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
         final CompoundTag render = new CompoundTag();
         for (final String key : List.of("minecraft:geometry", "minecraft:material_instances", "minecraft:transformation", "minecraft:collision_box")) {
             final var component = components.get(key);
-            if (component != null) render.put(key, component);
+            if (component != null) {
+                render.put(key, component);
+            }
         }
         return render;
     }
 
     private static List<Permutation> permutations(final CompoundTag properties) {
         final var list = properties.getListTag("permutations", CompoundTag.class);
-        if (list == null) return List.of();
+        if (list == null) {
+            return List.of();
+        }
         final List<Permutation> permutations = new ArrayList<>();
         for (final CompoundTag entry : list) {
             final String condition = entry.getString("condition", "");
             final CompoundTag components = entry.getCompoundTag("components");
-            if (condition.isEmpty() || condition.length() > 4096 || components == null) continue;
+            if (condition.isEmpty() || condition.length() > 4096 || components == null) {
+                continue;
+            }
             try {
                 permutations.add(new Permutation(MoLangEngine.parse(condition), components));
             } catch (final IOException | RuntimeException ignored) {
@@ -135,24 +159,40 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
 
     @SuppressWarnings("UnstableApiUsage")
     private static CompoundTag effectiveComponents(final CompoundTag base, final List<Permutation> permutations, final BlockState state) {
-        if (permutations.isEmpty() && base != null) return base;
+        if (permutations.isEmpty() && base != null) {
+            return base;
+        }
         final CompoundTag result = new CompoundTag();
-        if (base != null) base.entrySet().forEach(entry -> result.put(entry.getKey(), entry.getValue()));
-        if (permutations.isEmpty()) return result;
+        if (base != null) {
+            base.entrySet().forEach(entry -> result.put(entry.getKey(), entry.getValue()));
+        }
+        if (permutations.isEmpty()) {
+            return result;
+        }
         final Scope scope = Scope.create();
         final MutableObjectBinding queries = new MutableObjectBinding();
         final Function<Void> blockState = (context, arguments) -> {
-            if (arguments.length() != 1) return Value.nil();
+            if (arguments.length() != 1) {
+                return Value.nil();
+            }
             final String property = arguments.next().eval().getAsString();
-            if (state instanceof net.raphimc.viabedrock.api.model.BedrockBlockState bedrockState) {
+            if (state instanceof BedrockBlockState bedrockState) {
                 final var states = bedrockState.blockStateTag().getCompoundTag("states");
                 final var value = states != null ? states.get(property) : null;
-                if (value instanceof NumberTag number) return Value.of(number.asDouble());
-                if (value instanceof com.viaversion.nbt.tag.StringTag string) return Value.of(string.getValue());
+                if (value instanceof NumberTag number) {
+                    return Value.of(number.asDouble());
+                }
+                if (value instanceof StringTag string) {
+                    return Value.of(string.getValue());
+                }
             }
             final String value = state.properties().get(property);
-            if (value == null) return Value.nil();
-            if (value.equals("true") || value.equals("false")) return Value.of(Boolean.parseBoolean(value));
+            if (value == null) {
+                return Value.nil();
+            }
+            if (value.equals("true") || value.equals("false")) {
+                return Value.of(Boolean.parseBoolean(value));
+            }
             try {
                 return Value.of(Integer.parseInt(value));
             } catch (final NumberFormatException ignored) {
@@ -180,9 +220,13 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
                                            final String id, final CompoundTag components, final String variant) {
         final CompoundTag geometry = components.getCompoundTag("minecraft:geometry");
         final CompoundTag instances = components.getCompoundTag("minecraft:material_instances");
-        if (geometry == null || instances == null) return null;
+        if (geometry == null || instances == null) {
+            return null;
+        }
         final CompoundTag materials = instances.getCompoundTag("materials");
-        if (materials == null) return null;
+        if (materials == null) {
+            return null;
+        }
         final CompoundTag mappings = instances.getCompoundTag("mappings");
         final Map<Direction, String> textures = new EnumMap<>(Direction.class);
         for (final Direction side : Direction.values()) {
@@ -190,13 +234,21 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
             final String mapped = mappings != null ? mappings.getString(face, face) : face;
             final CompoundTag material = materials.getCompoundTag(mapped) != null
                 ? materials.getCompoundTag(mapped) : materials.getCompoundTag("*");
-            if (material == null) continue;
+            if (material == null) {
+                continue;
+            }
             final String texture = this.putTexture(packs, output, material.getString("texture", ""));
-            if (texture != null) textures.put(side, texture);
+            if (texture != null) {
+                textures.put(side, texture);
+            }
         }
-        if (textures.isEmpty()) return null;
+        if (textures.isEmpty()) {
+            return null;
+        }
         final String fallback = textures.values().iterator().next();
-        for (final Direction side : Direction.values()) textures.putIfAbsent(side, fallback);
+        for (final Direction side : Direction.values()) {
+            textures.putIfAbsent(side, fallback);
+        }
 
         final String geometryId = geometry.getString("identifier", "");
         final CompoundTag transform = components.getCompoundTag("minecraft:transformation");
@@ -208,7 +260,9 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
             scale = 1F;
         } else {
             final var model = packs.getModels().getBlockModel(geometryId);
-            if (model == null) return null;
+            if (model == null) {
+                return null;
+            }
             final var converted = model.toJavaItemModel(textures, RotationType.POST_1_21_11);
             json = converted.compile();
             json.getAsJsonObject("textures").addProperty("particle", textures.get(Direction.NORTH));
@@ -231,7 +285,9 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
     }
 
     private static int rotationY(final CompoundTag transform) {
-        if (transform == null) return 0;
+        if (transform == null) {
+            return 0;
+        }
         final CompoundTag rotation = transform.getCompoundTag("rotation");
         return rotation == null ? 0 : (int) rotation.getFloat("y");
     }
@@ -258,8 +314,6 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
         return carrier;
     }
 
-    private record Permutation(List<Expression> condition, CompoundTag components) { }
-
     public static boolean hasModel(final ResourcePackStorage storage, final String identifier, final String variant) {
         return storage.isLoadedOnJavaClient() && storage.getConverterData().containsKey("cb_" + identifier + '_' + variant);
     }
@@ -278,7 +332,9 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
         final boolean world = this.addModel(storage, output, block, "world", block.textures());
         final boolean carried = this.addModel(storage, output, block, "carried",
             block.carriedTextures().isEmpty() ? block.textures() : block.carriedTextures());
-        if (world || carried) output.generateItemDefinition();
+        if (world || carried) {
+            output.generateItemDefinition();
+        }
         return output;
     }
 
@@ -289,7 +345,9 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
             final String alias = aliases.getOrDefault(face, aliases.getOrDefault(
                 face.equals("down") || face.equals("up") ? "*" : "side", aliases.get("*")));
             final String texture = this.putTexture(storage, output, alias);
-            if (texture == null) return false;
+            if (texture == null) {
+                return false;
+            }
             textures.addProperty(face, texture);
         }
         final JsonObject model = new JsonObject();
@@ -302,18 +360,26 @@ public final class CustomBlockResourceRewriter extends ItemModelResourceRewriter
     }
 
     private String putTexture(final ResourcePackStorage storage, final ItemModelContent output, final String alias) {
-        if (alias == null || alias.isEmpty()) return null;
+        if (alias == null || alias.isEmpty()) {
+            return null;
+        }
         final var entries = storage.getTextures().terrainTextures().get(alias);
-        if (entries == null || entries.isEmpty()) return null;
+        if (entries == null || entries.isEmpty()) {
+            return null;
+        }
         final String path = entries.get(0).texturePath();
         for (final ResourcePack pack : storage.getPackStackTopToBottom()) {
             final Content.LazyImage image = pack.content().getShortnameImage(path);
-            if (image == null) continue;
+            if (image == null) {
+                continue;
+            }
             final String javaPath = this.getJavaTexturePath(path);
             output.putPngImage("assets/viabedrock/textures/" + javaPath + ".png", image);
             return "viabedrock:" + javaPath;
         }
         return null;
     }
+
+    private record Permutation(List<Expression> condition, CompoundTag components) { }
 
 }

@@ -203,7 +203,9 @@ public final class JoinPackets {
         protocol.registerClientboundTransition(ClientboundBedrockPackets.START_GAME,
             State.CONFIGURATION, (PacketHandler) wrapper -> {
                 wrapper.cancel();
-                if (wrapper.user().has(JoinGameStorage.class)) return;
+                if (wrapper.user().has(JoinGameStorage.class)) {
+                    return;
+                }
                 final GameSessionStorage gameSession = wrapper.user().get(GameSessionStorage.class);
                 ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
                 if (resourcePackStorage == null) {
@@ -424,7 +426,9 @@ public final class JoinPackets {
                         push.write(Types.OPTIONAL_TAG, null);
                         push.send(BedrockProtocol.class);
                         user.getChannel().eventLoop().schedule(() -> {
-                            if (user.getChannel().isActive()) packs.finishBlockPack(false);
+                            if (user.getChannel().isActive()) {
+                                packs.finishBlockPack(false);
+                            }
                         }, 30, TimeUnit.SECONDS);
                         return;
                     }

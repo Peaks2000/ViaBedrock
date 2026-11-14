@@ -261,14 +261,22 @@ public class ChunkTracker extends StoredObject {
 
     private CustomBlockModel customBlockModel(final BlockStateRewriter rewriter, final int stateId) {
         final ResourcePackStorage packs = this.user().get(ResourcePackStorage.class);
-        if (packs == null || !packs.isLoadedOnJavaClient()) return null;
+        if (packs == null || !packs.isLoadedOnJavaClient()) {
+            return null;
+        }
         final CustomBlockModel networkModel = packs.customBlockModel(stateId);
-        if (networkModel != null) return networkModel;
+        if (networkModel != null) {
+            return networkModel;
+        }
         return this.resourcePackBlockModels.computeIfAbsent(stateId, id -> {
             final BlockState state = rewriter.blockState(id);
-            if (state == null || state.namespacedIdentifier().startsWith("minecraft:")) return Optional.empty();
+            if (state == null || state.namespacedIdentifier().startsWith("minecraft:")) {
+                return Optional.empty();
+            }
             final String identifier = state.namespacedIdentifier();
-            if (!this.customBlockDisplays.canRender(identifier)) return Optional.empty();
+            if (!this.customBlockDisplays.canRender(identifier)) {
+                return Optional.empty();
+            }
             final int carrier = BedrockProtocol.MAPPINGS.getJavaBlockStates().getOrDefault(
                 BlockState.fromString("minecraft:barrier[waterlogged=false]"), ProtocolConstants.JAVA_AIR_ID);
             return Optional.of(new CustomBlockModel(identifier, "world", 1F, carrier, 0, false));
@@ -282,10 +290,14 @@ public class ChunkTracker extends StoredObject {
     private int connectKelp(final BlockPosition position, final int javaState) {
         final BlockStateRewriter rewriter = this.user().get(BlockStateRewriter.class);
         final int current = visibleLayerBlockState(this.getBlockState(0, position), this.getBlockState(1, position), this.bedrockAirId());
-        if (!rewriter.isKelp(current)) return javaState;
+        if (!rewriter.isKelp(current)) {
+            return javaState;
+        }
         final BlockPosition above = new BlockPosition(position.x(), position.y() + 1, position.z());
         final int upper = visibleLayerBlockState(this.getBlockState(0, above), this.getBlockState(1, above), this.bedrockAirId());
-        if (!rewriter.isKelp(upper)) return javaState;
+        if (!rewriter.isKelp(upper)) {
+            return javaState;
+        }
         final int stem = rewriter.kelpPlantJavaId();
         return stem != -1 ? stem : javaState;
     }
@@ -1066,7 +1078,9 @@ public class ChunkTracker extends StoredObject {
                 if (blockPalettes.stream().anyMatch(palette -> {
                     for (int index = 0; index < palette.size(); index++) {
                         final int id = palette.idByIndex(index);
-                        if (blockStateRewriter.isKelp(id) || this.customBlockModel(blockStateRewriter, id) != null) return true;
+                        if (blockStateRewriter.isKelp(id) || this.customBlockModel(blockStateRewriter, id) != null) {
+                            return true;
+                        }
                     }
                     return false;
                 })) {
@@ -1083,7 +1097,9 @@ public class ChunkTracker extends StoredObject {
                                     final boolean hasUpperKelp = y < 15
                                         ? blockStateRewriter.isKelp(visibleLayerBlockState(layer0, layer1, x, y + 1, z, airId))
                                         : this.connectKelp(new BlockPosition(baseX + x, baseY + y, baseZ + z), -1) == stem;
-                                    if (hasUpperKelp && stem != -1) remappedBlockPalette.setIdAt(x, y, z, stem);
+                                    if (hasUpperKelp && stem != -1) {
+                                        remappedBlockPalette.setIdAt(x, y, z, stem);
+                                    }
                                 } else if (visible != airId) {
                                     final CustomBlockModel model = this.customBlockModel(blockStateRewriter, visible);
                                     if (model != null) {

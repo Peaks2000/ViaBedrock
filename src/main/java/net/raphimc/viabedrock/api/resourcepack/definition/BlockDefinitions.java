@@ -65,7 +65,9 @@ public class BlockDefinitions {
     }
 
     private static Map<String, String> textureFaces(final JsonElement textures) {
-        if (textures == null || textures.isJsonNull()) return Map.of();
+        if (textures == null || textures.isJsonNull()) {
+            return Map.of();
+        }
         if (textures.isJsonPrimitive() && textures.getAsJsonPrimitive().isString()) {
             return Map.of("*", textures.getAsString());
         }
