@@ -79,6 +79,16 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         ));
         final Deque<RecentBlockSound> sounds = kind == PredictionKind.PLACEMENT
             ? this.recentPlacementSounds : this.recentBreakSounds;
+        this.rememberSound(sounds, clickedPosition, expectedUpdatePosition, nowNanos);
+    }
+
+    /** Creative predicts the break on START and does not send STOP for that block. */
+    public void rememberInstantBreakSound(final BlockPosition position, final long nowNanos) {
+        this.rememberSound(this.recentBreakSounds, position, position, nowNanos);
+    }
+
+    private void rememberSound(final Deque<RecentBlockSound> sounds, final BlockPosition clickedPosition,
+                               final BlockPosition expectedUpdatePosition, final long nowNanos) {
         this.pruneRecentSounds(sounds, nowNanos);
         while (sounds.size() >= MAX_RECENT_BLOCK_SOUNDS) {
             sounds.removeFirst();

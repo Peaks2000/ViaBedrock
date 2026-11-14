@@ -378,9 +378,15 @@ public final class ClientPlayerPackets {
 
             switch (action) {
                 case START_DESTROY_BLOCK -> {
+                    if (clientPlayer.javaGameMode() == GameMode.CREATIVE) {
+                        wrapper.user().get(BlockPlacementPredictionTracker.class)
+                            .rememberInstantBreakSound(position, System.nanoTime());
+                        clientPlayer.setBlockBreakingInfo(null);
+                    } else {
+                        clientPlayer.setBlockBreakingInfo(new ClientPlayerEntity.BlockBreakingInfo(position, direction));
+                    }
                     clientPlayer.sendSwingPacketToServer(ActorSwingSource.Mine);
                     clientPlayer.cancelNextSwingPacket();
-                    clientPlayer.setBlockBreakingInfo(new ClientPlayerEntity.BlockBreakingInfo(position, direction));
                     // TODO: Handle instant breaking
                     // TODO: Test breaking fire
                     // TODO: The java client keeps spamming swing packets while waiting for the block break cooldown. Those need to be cancelled
