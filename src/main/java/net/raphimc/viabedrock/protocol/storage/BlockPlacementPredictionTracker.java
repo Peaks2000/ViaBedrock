@@ -32,11 +32,12 @@ import java.util.concurrent.TimeUnit;
 public final class BlockPlacementPredictionTracker implements StorableObject {
 
     public static final long DEFAULT_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(2L);
-    private static final int MAX_RECENT_PLACEMENT_SOUNDS = 64;
+    private static final int MAX_RECENT_BLOCK_SOUNDS = 64;
 
     private final long timeoutNanos;
     private final Deque<PendingPlacement> pendingPlacements = new ArrayDeque<>();
-    private final Deque<RecentPlacementSound> recentPlacementSounds = new ArrayDeque<>();
+    private final Deque<RecentBlockSound> recentPlacementSounds = new ArrayDeque<>();
+    private final Deque<RecentBlockSound> recentBreakSounds = new ArrayDeque<>();
     private int highestRequestedAcknowledgement;
     private int lastSentAcknowledgement;
 
@@ -70,15 +71,13 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         this.pendingPlacements.addLast(new PendingPlacement(
             sequence, clickedPosition, expectedUpdatePosition, nowNanos, kind
         ));
-        if (kind == PredictionKind.PLACEMENT) {
-            this.pruneRecentPlacementSounds(nowNanos);
-            while (this.recentPlacementSounds.size() >= MAX_RECENT_PLACEMENT_SOUNDS) {
-                this.recentPlacementSounds.removeFirst();
-            }
-            this.recentPlacementSounds.addLast(new RecentPlacementSound(
-                clickedPosition, expectedUpdatePosition, nowNanos
-            ));
+        final Deque<RecentBlockSound> sounds = kind == PredictionKind.PLACEMENT
+            ? this.recentPlacementSounds : this.recentBreakSounds;
+        this.pruneRecentSounds(sounds, nowNanos);
+        while (sounds.size() >= MAX_RECENT_BLOCK_SOUNDS) {
+            sounds.removeFirst();
         }
+        sounds.addLast(new RecentBlockSound(clickedPosition, expectedUpdatePosition, nowNanos));
     }
 
     /**
@@ -138,8 +137,23 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
      * so this provides a bounded, one-shot identity fallback without muting unrelated sounds.
      */
     public boolean consumeLocalPlacementSound(final BlockPosition position, final long nowNanos) {
-        this.pruneRecentPlacementSounds(nowNanos);
-        final Iterator<RecentPlacementSound> iterator = this.recentPlacementSounds.iterator();
+        return this.consumeSound(this.recentPlacementSounds, position, nowNanos);
+    }
+
+    /** Checks the effect independently of the authoritative block change and its acknowledgement. */
+    public boolean consumeLocalBreakSound(final BlockPosition position, final long nowNanos) {
+        return this.consumeSound(this.recentBreakSounds, position, nowNanos);
+    }
+
+    public void clearSoundPredictions() {
+        this.recentPlacementSounds.clear();
+        this.recentBreakSounds.clear();
+    }
+
+    private boolean consumeSound(final Deque<RecentBlockSound> sounds,
+                                 final BlockPosition position, final long nowNanos) {
+        this.pruneRecentSounds(sounds, nowNanos);
+        final Iterator<RecentBlockSound> iterator = sounds.iterator();
         while (iterator.hasNext()) {
             if (iterator.next().matches(position)) {
                 iterator.remove();
@@ -173,7 +187,8 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
     }
 
     public Expiration expire(final long nowNanos) {
-        this.pruneRecentPlacementSounds(nowNanos);
+        this.pruneRecentSounds(this.recentPlacementSounds, nowNanos);
+        this.pruneRecentSounds(this.recentBreakSounds, nowNanos);
         final Set<BlockPosition> resyncPositions = new LinkedHashSet<>();
         for (PendingPlacement pending : this.pendingPlacements) {
             if (!pending.resolved && nowNanos - pending.startedAtNanos >= this.timeoutNanos) {
@@ -185,10 +200,9 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         return new Expiration(new ArrayList<>(resyncPositions));
     }
 
-    private void pruneRecentPlacementSounds(final long nowNanos) {
-        while (!this.recentPlacementSounds.isEmpty()
-            && nowNanos - this.recentPlacementSounds.peekFirst().startedAtNanos >= this.timeoutNanos) {
-            this.recentPlacementSounds.removeFirst();
+    private void pruneRecentSounds(final Deque<RecentBlockSound> sounds, final long nowNanos) {
+        while (!sounds.isEmpty() && nowNanos - sounds.peekFirst().startedAtNanos >= this.timeoutNanos) {
+            sounds.removeFirst();
         }
     }
 
@@ -232,7 +246,7 @@ public final class BlockPlacementPredictionTracker implements StorableObject {
         BREAKING
     }
 
-    private record RecentPlacementSound(BlockPosition clickedPosition, BlockPosition expectedUpdatePosition,
+    private record RecentBlockSound(BlockPosition clickedPosition, BlockPosition expectedUpdatePosition,
                                         long startedAtNanos) {
 
         private boolean matches(final BlockPosition position) {

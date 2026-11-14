@@ -356,6 +356,13 @@ public final class WorldEffectPackets {
                 wrapper.cancel();
                 return;
             }
+            if (levelEvent == LevelEvent.ParticlesDestroyBlock
+                && wrapper.user().get(BlockPlacementPredictionTracker.class).consumeLocalBreakSound(
+                    levelEventBlockPosition(position), System.nanoTime())) {
+                // Java already played the sound and particles while predicting this local break.
+                wrapper.cancel();
+                return;
+            }
             if (advancesJavaTimeToDawn(levelEvent)) {
                 // Client-hosted worlds can skip to dawn without broadcasting SetTime back to
                 // the hosting Bedrock client. Java does not perform that local sleep-time jump.
