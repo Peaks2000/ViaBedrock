@@ -37,6 +37,7 @@ import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorDataIds;
 import net.raphimc.viabedrock.protocol.data.enums.bedrock.ActorFlags;
 import net.raphimc.viabedrock.protocol.data.generated.java.EntityDataFields;
+import net.raphimc.viabedrock.protocol.data.generated.java.RegistryKeys;
 import net.raphimc.viabedrock.protocol.model.EntityAttribute;
 import net.raphimc.viabedrock.protocol.model.EntityProperties;
 import net.raphimc.viabedrock.protocol.storage.EntityPropertyTracker;
@@ -49,6 +50,11 @@ import java.util.Set;
 import java.util.logging.Level;
 
 public final class EntityMetadataRewriter {
+
+    private static final List<String> BEDROCK_CAT_VARIANTS = List.of(
+        "white", "black", "red", "siamese", "british_shorthair", "calico",
+        "persian", "ragdoll", "tabby", "all_black", "jellie"
+    );
 
     public static boolean rewrite(final UserConnection user, final Entity entity, final ActorDataIds id, final EntityData entityData, final List<EntityData> javaEntityData) {
         final EntityTracker entityTracker = user.get(EntityTracker.class);
@@ -332,10 +338,7 @@ public final class EntityMetadataRewriter {
                         final int javaVariant = variant;
                         javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.VARIANT), VersionedTypes.V26_3.entityDataTypes().varIntType, javaVariant));
                     }
-                    case CAT -> { // TODO: Test when I can
-                        final int javaVariant = variant;
-                        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.VARIANT), VersionedTypes.V26_3.entityDataTypes().varIntType, javaVariant));
-                    }
+                    case CAT -> addCatVariant(entity, variant, javaEntityData);
                     default -> {
                         if (variant != 0) { // For some reason bedrock seems to send variant 0 for many entities that don't have variants
                             ViaBedrock.getPlatform().getLogger().warning("Received non-zero VARIANT " + variant + " for unsupported entity " + entity.type());
@@ -798,6 +801,23 @@ public final class EntityMetadataRewriter {
     private static boolean isZeroScaleArmorStand(final Entity entity) {
         final EntityData scale = entity.entityData().get(ActorDataIds.RESERVED_038);
         return entity.javaType().is(EntityTypes26_3.ARMOR_STAND) && scale != null && readNumber(scale).floatValue() == 0F;
+    }
+
+    private static void addCatVariant(final Entity entity, final int bedrockVariant, final List<EntityData> javaEntityData) {
+        if (bedrockVariant < 0 || bedrockVariant >= BEDROCK_CAT_VARIANTS.size()) {
+            return;
+        }
+        final String variant = Key.namespaced(BEDROCK_CAT_VARIANTS.get(bedrockVariant));
+        final CompoundTag registry = BedrockProtocol.MAPPINGS.getJavaRegistries().getCompoundTag(RegistryKeys.CAT_VARIANT);
+        int index = 0;
+        for (final String key : registry.keySet()) {
+            if (variant.equals(key)) {
+                javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.VARIANT),
+                    VersionedTypes.V26_3.entityDataTypes().catVariantType, index));
+                return;
+            }
+            index++;
+        }
     }
 
     private static void addNameVisibility(final Entity entity, final List<EntityData> javaEntityData) {
