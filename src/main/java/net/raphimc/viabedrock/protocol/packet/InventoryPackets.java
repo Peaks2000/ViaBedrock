@@ -390,6 +390,11 @@ public final class InventoryPackets {
                 }
             }
 
+            final Set<Integer> playerSlots = correctedSlots.get(inventoryTracker.getInventoryContainer());
+            if (playerSlots != null && transaction.transactionType() == ComplexInventoryTransaction_Type.NormalTransaction) {
+                inventoryTracker.authoritativePickups().remember(transaction.actions(), playerSlots, System.nanoTime());
+            }
+
             boolean refreshCombinedPlayerInventory = false;
             for (Map.Entry<Container, Set<Integer>> entry : correctedSlots.entrySet()) {
                 final Container container = entry.getKey();

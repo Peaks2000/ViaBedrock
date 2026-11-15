@@ -59,6 +59,7 @@ public class InventoryTracker extends StoredObject {
     private static final int PLAYER_INVENTORY_REFRESH_DELAY_TICKS = 2;
     private static final int OFFHAND_SWAP_OPEN_TIMEOUT_TICKS = 40;
 
+    private final AuthoritativePickupTracker authoritativePickups = new AuthoritativePickupTracker();
     private final InventoryContainer inventoryContainer = new InventoryContainer(this.user());
     private final OffhandContainer offhandContainer = new OffhandContainer(this.user());
     private final ArmorContainer armorContainer = new ArmorContainer(this.user());
@@ -208,6 +209,10 @@ public class InventoryTracker extends StoredObject {
                 this.forceCloseCurrentContainer();
             }
         }
+    }
+
+    public AuthoritativePickupTracker authoritativePickups() {
+        return this.authoritativePickups;
     }
 
     public void schedulePlayerPickupRefresh() {
