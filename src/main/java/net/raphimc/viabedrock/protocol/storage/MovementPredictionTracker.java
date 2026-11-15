@@ -74,10 +74,14 @@ public final class MovementPredictionTracker {
             correctionDelta.x(), authoritativeVelocity.x(), laterMovement.x());
         final boolean blockedZ = verticalStabilizationInput && rejectedMovement(correctedSnapshot.movement().z(),
             correctionDelta.z(), authoritativeVelocity.z(), laterMovement.z());
-        final boolean correctedX = collisionReplay && Math.abs(correctionDelta.x()) > CORRECTION_EPSILON;
-        final boolean correctedZ = collisionReplay && Math.abs(correctionDelta.z()) > CORRECTION_EPSILON;
-        final boolean stabilizeX = blockedX || (collisionReplay && (correctedSnapshot.correctedX() || correctedX));
-        final boolean stabilizeZ = blockedZ || (collisionReplay && (correctedSnapshot.correctedZ() || correctedZ));
+        // The horizontal collision flag has no axis. Server velocity distinguishes
+        // a blocked axis from movement along the wall at the corrected tick.
+        final boolean stoppedX = collisionReplay && Math.abs(authoritativeVelocity.x()) <= CORRECTION_EPSILON;
+        final boolean stoppedZ = collisionReplay && Math.abs(authoritativeVelocity.z()) <= CORRECTION_EPSILON;
+        final boolean correctedX = stoppedX && Math.abs(correctionDelta.x()) > CORRECTION_EPSILON;
+        final boolean correctedZ = stoppedZ && Math.abs(correctionDelta.z()) > CORRECTION_EPSILON;
+        final boolean stabilizeX = blockedX || (stoppedX && (correctedSnapshot.correctedX() || correctedX));
+        final boolean stabilizeZ = blockedZ || (stoppedZ && (correctedSnapshot.correctedZ() || correctedZ));
 
         final boolean laterVerticalDescent = laterMovement.y() < -CORRECTION_EPSILON;
         final boolean laterNonAscendingPosition = laterMovement.y() <= CORRECTION_EPSILON;
@@ -117,9 +121,7 @@ public final class MovementPredictionTracker {
         // An older correction must not overwrite the current collision state. A correction
         // for the current tick, however, carries the authoritative on-ground value for it.
         final boolean replayedOnGround = tick == currentTick ? authoritativeOnGround : currentOnGround;
-        return new Correction(replayedPosition, replayedOnGround, true,
-            stabilizeX && Math.abs(authoritativeVelocity.x()) <= CORRECTION_EPSILON,
-            stabilizeZ && Math.abs(authoritativeVelocity.z()) <= CORRECTION_EPSILON, stabilizeVertical);
+        return new Correction(replayedPosition, replayedOnGround, true, stabilizeX, stabilizeZ, stabilizeVertical);
     }
 
     private static boolean rejectedMovement(final float movement, final float correction, final float velocity,

@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.protocol.storage;
 
 import com.viaversion.viaversion.api.connection.StorableObject;
 import com.viaversion.viaversion.api.minecraft.BlockPosition;
+import io.netty.util.AttributeKey;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class BlockPlacementPredictionTracker implements StorableObject {
 
+    public static final AttributeKey<Integer> INSTANT_BREAK_SEQUENCE = AttributeKey.valueOf("viafabricplus:instant_break_sequence");
     public static final long DEFAULT_TIMEOUT_NANOS = TimeUnit.SECONDS.toNanos(2L);
     private static final int MAX_RECENT_BLOCK_SOUNDS = 64;
 
