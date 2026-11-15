@@ -709,9 +709,14 @@ public final class EntityPackets {
             int collectedAmount = 0;
             if (collectorEntityRuntimeId == entityTracker.getClientPlayer().runtimeId() && itemEntity instanceof ItemEntity droppedItem) {
                 final InventoryTracker inventoryTracker = wrapper.user().get(InventoryTracker.class);
-                collectedAmount = inventoryTracker.getInventoryContainer().predictPickup(droppedItem.item());
+                collectedAmount = inventoryTracker.authoritativePickups().consume(droppedItem.item(), System.nanoTime());
+                if (collectedAmount == 0) {
+                    collectedAmount = inventoryTracker.getInventoryContainer().predictPickup(droppedItem.item());
+                    if (collectedAmount > 0) {
+                        inventoryTracker.schedulePlayerPickupRefresh();
+                    }
+                }
                 droppedItem.removeAmount(collectedAmount);
-                inventoryTracker.schedulePlayerPickupRefresh();
             } else if (itemEntity instanceof ItemEntity droppedItem) {
                 collectedAmount = droppedItem.item().amount();
             }
