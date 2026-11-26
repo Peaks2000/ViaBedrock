@@ -64,6 +64,7 @@ import net.raphimc.viabedrock.protocol.model.EntityAttribute;
 import net.raphimc.viabedrock.protocol.model.EntityEffect;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.ItemRewriter;
+import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomEntityResourceRewriter;
 import net.raphimc.viabedrock.protocol.storage.EntityPropertyTracker;
 import net.raphimc.viabedrock.protocol.storage.EntityTracker;
 import net.raphimc.viabedrock.protocol.storage.GameSessionStorage;
@@ -110,6 +111,10 @@ public final class EntityPackets {
             final EntityTypes26_3 javaEntityType = BedrockProtocol.MAPPINGS.getBedrockToJavaEntities().get(type);
             if (javaEntityType != null) {
                 entity = entityTracker.addEntity(entityUniqueId, entityRuntimeId, type, javaEntityType);
+                final ResourcePackStorage packs = wrapper.user().get(ResourcePackStorage.class);
+                if (packs != null) {
+                    entity.setLegacyModel(CustomEntityResourceRewriter.legacyModel(packs, type));
+                }
             } else if (gameSession.getAvailableEntityIdentifiers().contains(type)) {
                 final ResourcePackStorage resourcePackStorage = wrapper.user().get(ResourcePackStorage.class);
                 final EntityDefinitions.EntityDefinition entityDefinition = resourcePackStorage.getEntities().get(type);

@@ -60,16 +60,17 @@ repositories {
 dependencies {
     compileOnly "com.viaversion:viaversion-common:5.12.0"
     compileOnly "org.yaml:snakeyaml:2.7"
-    compileOnly "com.google.guava:guava:33.7.2-jre"
-    compileOnly "io.netty:netty-handler:4.2.19.Final"
+    compileOnly "com.google.guava:guava:33.8.0-jre"
+    compileOnly "io.netty:netty-handler:4.2.21.Final"
     compileOnly "com.google.code.gson:gson:2.15.0"
+    // The maintained Fabric routes still support legacy RakNet servers.
     compileOnly "org.cloudburstmc.netty:netty-transport-raknet:2.0.0.CR4-20260921.144528-1"
     compileOnly "org.cloudburstmc.netty:netty-transport-nethernet:2.0.0.CR4-20260921.144528-1"
 
-    api("io.netty:netty-codec-http:4.2.19.Final") {
+    api("io.netty:netty-codec-http:4.2.21.Final") {
         transitive = false
     }
-    api("io.netty:netty-codec-compression:4.2.19.Final") {
+    api("io.netty:netty-codec-compression:4.2.21.Final") {
         transitive = false
     }
     api "io.jsonwebtoken:jjwt-impl:0.13.0"
@@ -90,15 +91,15 @@ dependencies {
     }
     api "com.vdurmont:semver4j:3.1.0"
     api "com.mojang:brigadier:1.3.10"
-    api "at.yawk.lz4:lz4-java:1.12.1"
-    api("com.github.oryxel1:CubeConverter:7cf736c4a5") {
+    api "at.yawk.lz4:lz4-java:1.14.1"
+    api("com.github.oryxel1.CubeConverter:vv-json:1.3.1") {
         transitive = false
     }
     api("team.unnamed:mocha:3.0.1") {
         transitive = false
     }
 
-    toolImplementation "org.jsoup:jsoup:1.23.2"
+    toolImplementation "org.jsoup:jsoup:1.24.1"
     toolImplementation "org.ow2.asm:asm-tree:9.11.1"
     toolImplementation "net.lenni0451.commons:asm:1.9.2"
 }

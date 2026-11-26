@@ -12,6 +12,12 @@ on:
       - experiment/4.6.14
       - experiment/26.3-26.63
   workflow_dispatch:
+    inputs:
+      viafabricplus_ref:
+        description: ViaFabricPlusPeaks branch or commit for paired changes
+        default: main
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -36,7 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.VIAFABRICPLUS_REPOSITORY }}
-          ref: ${{ env.VIAFABRICPLUS_REF }}
+          ref: ${{ inputs.viafabricplus_ref || env.VIAFABRICPLUS_REF }}
           path: ViaFabricPlus
           persist-credentials: false
 
