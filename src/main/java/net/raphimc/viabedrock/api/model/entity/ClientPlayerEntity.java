@@ -193,14 +193,16 @@ public class ClientPlayerEntity extends PlayerEntity {
 
     public void writePlayerPositionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives, final boolean fakeTeleport) {
         this.movementPredictions.reset(this.age);
-        this.writePositionPacketToClient(wrapper, relatives, fakeTeleport);
+        this.writePositionPacketToClient(wrapper, relatives, fakeTeleport, 0F);
     }
 
-    public void writeMovementCorrectionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives) {
-        this.writePositionPacketToClient(wrapper, relatives, true);
+    public void writeMovementCorrectionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives,
+                                                      final float verticalVelocity) {
+        this.writePositionPacketToClient(wrapper, relatives, true, verticalVelocity);
     }
 
-    private void writePositionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives, final boolean fakeTeleport) {
+    private void writePositionPacketToClient(final PacketWrapper wrapper, final Set<Relative> relatives,
+                                              final boolean fakeTeleport, final float verticalVelocity) {
         this.pendingTeleportId = this.teleportId.getAndIncrement();
 
         wrapper.write(Types.VAR_INT, this.pendingTeleportId * (fakeTeleport ? -1 : 1)); // teleport id
@@ -208,7 +210,7 @@ public class ClientPlayerEntity extends PlayerEntity {
         wrapper.write(Types.DOUBLE, relatives.contains(Relative.Y) ? 0D : (double) (this.position.y() - this.eyeOffset())); // y
         wrapper.write(Types.DOUBLE, relatives.contains(Relative.Z) ? 0D : (double) this.position.z()); // z
         wrapper.write(Types.DOUBLE, 0D); // velocity x
-        wrapper.write(Types.DOUBLE, 0D); // velocity y
+        wrapper.write(Types.DOUBLE, (double) verticalVelocity); // velocity y
         wrapper.write(Types.DOUBLE, 0D); // velocity z
         wrapper.write(Types.FLOAT, relatives.contains(Relative.Y_ROT) ? 0F : this.rotation.y()); // yaw
         wrapper.write(Types.FLOAT, relatives.contains(Relative.X_ROT) ? 0F : this.rotation.x()); // pitch

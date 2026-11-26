@@ -264,6 +264,42 @@ public class BlockStateRewriter implements StorableObject {
         return state != null && "minecraft:kelp".equals(state.namespacedIdentifier());
     }
 
+    public int doorNeighborOffset(final int bedrockId) {
+        final BlockState state = this.blockState(bedrockId);
+        if (state == null || !state.namespace().equals("minecraft") || !state.identifier().endsWith("_door")) {
+            return 0;
+        }
+        return switch (state.properties().getOrDefault("upper_block_bit", "")) {
+            case "0" -> 1;
+            case "1" -> -1;
+            default -> 0;
+        };
+    }
+
+    public int pairedDoorJavaId(final int bedrockId, final int neighborId, final int fallback) {
+        final var javaStates = BedrockProtocol.MAPPINGS.getJavaBlockStates();
+        final BlockState state = javaStates.inverse().get(this.javaId(bedrockId));
+        final BlockState neighbor = javaStates.inverse().get(this.javaId(neighborId));
+        final BlockState paired = pairDoorHalves(state, neighbor);
+        return paired == state ? fallback : javaStates.getOrDefault(paired, fallback);
+    }
+
+    public static BlockState pairDoorHalves(final BlockState state, final BlockState neighbor) {
+        if (state == null || neighbor == null || !state.identifier().endsWith("_door")
+            || !state.namespacedIdentifier().equals(neighbor.namespacedIdentifier())) {
+            return state;
+        }
+        final boolean upper = state.hasProperty("half", "upper");
+        if (!state.hasProperty("half", upper ? "upper" : "lower")
+            || !neighbor.hasProperty("half", upper ? "lower" : "upper")) {
+            return state;
+        }
+        // Bedrock's lower half supplies facing and open state. The upper half supplies the hinge.
+        final BlockState lower = upper ? neighbor : state;
+        final BlockState top = upper ? state : neighbor;
+        return lower.withProperties(Map.of("half", upper ? "upper" : "lower", "hinge", top.properties().get("hinge")));
+    }
+
     public int kelpPlantJavaId() {
         return BedrockProtocol.MAPPINGS.getJavaBlockStates().getOrDefault(BlockState.fromString("minecraft:kelp_plant"), -1);
     }

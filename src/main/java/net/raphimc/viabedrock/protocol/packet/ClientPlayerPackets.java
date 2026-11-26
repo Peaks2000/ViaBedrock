@@ -228,9 +228,15 @@ public final class ClientPlayerPackets {
                     if (correctedPosition.z() == currentPosition.z()) {
                         relatives.add(Relative.Z);
                     }
+                    final boolean reconcileVerticalVelocity = tick == clientPlayer.age()
+                        && !clientPlayer.hasContinuousVerticalMovement()
+                        && (correctedPosition.y() != currentPosition.y() || correction.onGround() != clientPlayer.isOnGround());
+                    if (reconcileVerticalVelocity) {
+                        relatives.remove(Relative.DELTA_Y);
+                    }
                     clientPlayer.setPosition(correctedPosition);
                     clientPlayer.setOnGround(correction.onGround());
-                    clientPlayer.writeMovementCorrectionPacketToClient(wrapper, relatives);
+                    clientPlayer.writeMovementCorrectionPacketToClient(wrapper, relatives, reconcileVerticalVelocity ? velocity.y() : 0F);
                 }
                 case Vehicle -> wrapper.cancel();
                 default -> throw new IllegalStateException("Unhandled RewindType: " + rewindType);
@@ -562,7 +568,8 @@ public final class ClientPlayerPackets {
             final boolean prevOnGround = clientPlayer.prevOnGround();
             final Set<InputFlag> prevInputFlags = clientPlayer.prevInputFlags();
             clientPlayer.tick();
-            if (prevOnGround && clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
+            if (prevOnGround && !clientPlayer.isOnGround() && clientPlayer.position().y() > prevPosition.y()
+                && clientPlayer.inputFlags().contains(InputFlag.JUMP)) {
                 clientPlayer.addAuthInputData(PlayerAuthInputData.StartJumping);
             }
 
@@ -651,8 +658,11 @@ public final class ClientPlayerPackets {
                 || clientPlayer.abilities().getBooleanValue(AbilitiesIndex.Flying)
                 || clientPlayer.hasClientPredictedVehicle()) {
                 velocity = positionDelta;
-            } else if (fluid != null && fluid.inFluid()) {
-                // Java has already applied the fluid's drag, buoyancy and vertical input.
+            } else if (fluid != null && (fluid.inFluid() || !clientPlayer.isOnClimbable()
+                && !clientPlayer.isGliding() && !clientPlayer.effects().containsKey("minecraft:levitation")
+                && !clientPlayer.effects().containsKey("minecraft:slow_falling"))) {
+                // Use Java's post-collision velocity. Travel distance can include a step up
+                // or partial movement before impact, neither of which is momentum.
                 velocity = new Position3f(fluid.velocityX(), fluid.velocityY(), fluid.velocityZ());
             } else {
                 float dx = positionDelta.x() * 0.98F;

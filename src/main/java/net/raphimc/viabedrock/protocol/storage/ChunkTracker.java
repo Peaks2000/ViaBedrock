@@ -251,7 +251,15 @@ public class ChunkTracker extends StoredObject {
 
         final int javaState = this.getJavaBlockState(chunkSection, sectionX, sectionY, sectionZ);
         final CustomBlockModel display = this.customBlockModel(blockPosition);
-        return display == null ? this.connectKelp(blockPosition, javaState) : display.carrier();
+        if (display != null) {
+            return display.carrier();
+        }
+        final int visible = visibleLayerBlockState(this.getBlockState(0, blockPosition),
+            this.getBlockState(1, blockPosition), this.bedrockAirId());
+        final BlockStateRewriter rewriter = this.user().get(BlockStateRewriter.class);
+        final int doorOffset = rewriter.doorNeighborOffset(visible);
+        return doorOffset != 0 ? this.connectDoor(rewriter, blockPosition, visible, doorOffset, javaState)
+            : this.connectKelp(blockPosition, javaState);
     }
 
     private CustomBlockModel customBlockModel(final BlockPosition position) {
@@ -304,6 +312,32 @@ public class ChunkTracker extends StoredObject {
         }
         final int stem = rewriter.kelpPlantJavaId();
         return stem != -1 ? stem : javaState;
+    }
+
+    private int connectDoor(final BlockStateRewriter rewriter, final BlockPosition position, final int id,
+                            final int offset, final int javaState) {
+        final BlockPosition neighbor = new BlockPosition(position.x(), position.y() + offset, position.z());
+        if (neighbor.y() < this.minY || neighbor.y() >= this.minY + this.worldHeight) {
+            return javaState;
+        }
+        return rewriter.pairedDoorJavaId(id, visibleLayerBlockState(this.getBlockState(0, neighbor),
+            this.getBlockState(1, neighbor), this.bedrockAirId()), javaState);
+    }
+
+    public void collectDoorNeighbors(final Set<BlockPosition> neighbors, final BlockPosition position,
+                                     final int previousState, final int currentState) {
+        final BlockStateRewriter rewriter = this.user().get(BlockStateRewriter.class);
+        for (int offset : new int[]{rewriter.doorNeighborOffset(previousState), rewriter.doorNeighborOffset(currentState)}) {
+            if (offset == 0) {
+                continue;
+            }
+            final BlockPosition neighbor = new BlockPosition(position.x(), position.y() + offset, position.z());
+            if (neighbor.y() >= this.minY && neighbor.y() < this.minY + this.worldHeight
+                && rewriter.doorNeighborOffset(this.getBlockState(neighbor)) == -offset
+                && !this.user().get(BlockPlacementPredictionTracker.class).isPendingBreaking(neighbor)) {
+                neighbors.add(neighbor);
+            }
+        }
     }
 
     public void refreshKelpBelow(final BlockPosition changed) {
@@ -1091,7 +1125,8 @@ public class ChunkTracker extends StoredObject {
                 if (blockPalettes.stream().anyMatch(palette -> {
                     for (int index = 0; index < palette.size(); index++) {
                         final int id = palette.idByIndex(index);
-                        if (blockStateRewriter.isKelp(id) || this.customBlockModel(blockStateRewriter, id) != null) {
+                        if (blockStateRewriter.doorNeighborOffset(id) != 0 || blockStateRewriter.isKelp(id)
+                            || this.customBlockModel(blockStateRewriter, id) != null) {
                             return true;
                         }
                     }
@@ -1114,6 +1149,13 @@ public class ChunkTracker extends StoredObject {
                                         remappedBlockPalette.setIdAt(x, y, z, stem);
                                     }
                                 } else if (visible != airId) {
+                                    final int doorOffset = blockStateRewriter.doorNeighborOffset(visible);
+                                    if (doorOffset != 0) {
+                                        final BlockPosition position = new BlockPosition(baseX + x, baseY + y, baseZ + z);
+                                        remappedBlockPalette.setIdAt(x, y, z, this.connectDoor(blockStateRewriter,
+                                            position, visible, doorOffset, remappedBlockPalette.idAt(x, y, z)));
+                                        continue;
+                                    }
                                     final CustomBlockModel model = this.customBlockModel(blockStateRewriter, visible);
                                     if (model != null) {
                                         blockModels.put(new BlockPosition(baseX + x, baseY + y, baseZ + z), model);

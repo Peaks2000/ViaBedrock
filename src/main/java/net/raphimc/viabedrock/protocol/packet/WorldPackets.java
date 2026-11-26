@@ -65,6 +65,7 @@ import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,11 +116,22 @@ public final class WorldPackets {
         }
         chunkTracker.updateCustomBlockDisplay(position);
 
-        if (remappedBlock.value() != null || predictionConfirmed) {
+        final Set<BlockPosition> doorNeighbors;
+        if (layer == 0 && (blockStateRewriter.doorNeighborOffset(previousBlockState) != 0
+            || blockStateRewriter.doorNeighborOffset(blockState) != 0)) {
+            doorNeighbors = new HashSet<>();
+            chunkTracker.collectDoorNeighbors(doorNeighbors, position, previousBlockState, blockState);
+        } else {
+            doorNeighbors = Set.of();
+        }
+        if (remappedBlock.value() != null || predictionConfirmed || !doorNeighbors.isEmpty()) {
             wrapper.send(BedrockProtocol.class);
             wrapper.cancel();
             if (remappedBlock.value() != null) {
                 PacketFactory.sendJavaBlockEntityData(wrapper.user(), position, remappedBlock.value());
+            }
+            for (BlockPosition neighbor : doorNeighbors) {
+                PacketFactory.sendJavaBlockUpdate(wrapper.user(), neighbor, chunkTracker.getJavaBlockState(neighbor));
             }
             if (predictionConfirmed) {
                 PacketFactory.flushJavaBlockChangedAck(wrapper.user());
@@ -440,9 +452,10 @@ public final class WorldPackets {
             blockUpdatesArray[0] = wrapper.read(BedrockTypes.BLOCK_CHANGE_ENTRY_ARRAY); // standard blocks
             blockUpdatesArray[1] = wrapper.read(BedrockTypes.BLOCK_CHANGE_ENTRY_ARRAY); // extra blocks
 
-            final Map<BlockPosition, List<BlockChangeRecord>> blockChanges = new HashMap<>();
+            final Map<BlockPosition, Integer> changedStates = new LinkedHashMap<>();
             final Map<BlockPosition, BlockEntity> blockEntities = new HashMap<>();
             final Set<BlockPosition> kelpChanges = new HashSet<>();
+            final Set<BlockPosition> doorUpdates = new HashSet<>();
             final BlockStateRewriter blockStateRewriter = wrapper.user().get(BlockStateRewriter.class);
             boolean predictionConfirmed = false;
             for (int layer = 0; layer < blockUpdatesArray.length; layer++) {
@@ -474,12 +487,28 @@ public final class WorldPackets {
                         blockEntities.put(entry.position(), remappedBlock.value());
                     }
 
-                    final BlockPosition chunkPosition = new BlockPosition(entry.position().x() >> 4, entry.position().y() >> 4, entry.position().z() >> 4);
-                    final BlockPosition relative = new BlockPosition(entry.position().x() & 0xF, entry.position().y() & 0xF, entry.position().z() & 0xF);
-                    blockChanges.computeIfAbsent(chunkPosition, k -> new ArrayList<>()).add(new BlockChangeRecord1_16_2(relative.x(), relative.y(), relative.z(), remappedBlock.keyInt()));
+                    if (layer == 0 && (blockStateRewriter.doorNeighborOffset(previousBlockState) != 0
+                        || blockStateRewriter.doorNeighborOffset(entry.blockState()) != 0)) {
+                        chunkTracker.collectDoorNeighbors(doorUpdates, entry.position(), previousBlockState, entry.blockState());
+                        doorUpdates.add(entry.position());
+                    }
+
+                    changedStates.put(entry.position(), remappedBlock.keyInt());
                 }
             }
 
+            final BlockPlacementPredictionTracker predictionTracker = wrapper.user().get(BlockPlacementPredictionTracker.class);
+            for (BlockPosition position : doorUpdates) {
+                if (!predictionTracker.isPendingBreaking(position) && blockStateRewriter.doorNeighborOffset(chunkTracker.getBlockState(position)) != 0) {
+                    changedStates.put(position, chunkTracker.getJavaBlockState(position));
+                }
+            }
+            final Map<BlockPosition, List<BlockChangeRecord>> blockChanges = new HashMap<>();
+            changedStates.forEach((position, state) -> {
+                final BlockPosition section = new BlockPosition(position.x() >> 4, position.y() >> 4, position.z() >> 4);
+                blockChanges.computeIfAbsent(section, k -> new ArrayList<>()).add(
+                    new BlockChangeRecord1_16_2(position.x() & 15, position.y() & 15, position.z() & 15, state));
+            });
             for (Map.Entry<BlockPosition, List<BlockChangeRecord>> entry : blockChanges.entrySet()) {
                 final BlockPosition chunkPosition = entry.getKey();
                 final List<BlockChangeRecord> changes = entry.getValue();

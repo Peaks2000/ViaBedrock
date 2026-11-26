@@ -67,12 +67,12 @@ public final class MovementPredictionTracker {
         final Position3f laterMovement = currentPosition.subtract(correctedSnapshot.position());
         final boolean collisionReplay = correctedSnapshot.horizontalCollision() || currentHorizontalCollision;
 
-        // On a shape Java predicts differently (such as a pane), Bedrock can stop a crouched
+        // On a shape Java predicts differently (such as a door edge or pane), Bedrock can stop a
         // player before Java reports any collision. A zero server velocity and an offset
         // opposing the movement sent for that tick identify the rejected axis.
-        final boolean blockedX = verticalStabilizationInput && rejectedMovement(correctedSnapshot.movement().x(),
+        final boolean blockedX = rejectedMovement(correctedSnapshot.movement().x(),
             correctionDelta.x(), authoritativeVelocity.x(), laterMovement.x());
-        final boolean blockedZ = verticalStabilizationInput && rejectedMovement(correctedSnapshot.movement().z(),
+        final boolean blockedZ = rejectedMovement(correctedSnapshot.movement().z(),
             correctionDelta.z(), authoritativeVelocity.z(), laterMovement.z());
         // The horizontal collision flag has no axis. Server velocity distinguishes
         // a blocked axis from movement along the wall at the corrected tick.
@@ -87,17 +87,20 @@ public final class MovementPredictionTracker {
         final boolean laterNonAscendingPosition = laterMovement.y() <= CORRECTION_EPSILON;
         final boolean continuousVerticalMovement = correctedSnapshot.continuousVerticalMovement()
             || currentContinuousVerticalMovement;
-        // A pre-jump ground correction must not shift a crouch jump. An airborne correction
+        // A pre-jump correction must not shift a newer takeoff or upward step. An airborne correction
         // must not move a later grounded prediction through its new support (for example a
         // bridge block). Corrections for the current tick always use the server height.
-        final boolean crouchTakeoff = verticalStabilizationInput && correctedSnapshot.onGround() && authoritativeOnGround && !currentOnGround;
+        final boolean newerTakeoff = correctedSnapshot.onGround() && authoritativeOnGround && !currentOnGround
+            && (verticalStabilizationInput || !laterNonAscendingPosition);
         final boolean movedHorizontally = Math.abs(laterMovement.x()) > CORRECTION_EPSILON
             || Math.abs(laterMovement.z()) > CORRECTION_EPSILON;
         final boolean laterLanding = currentOnGround && (!correctedSnapshot.onGround()
             || (movedHorizontally && !authoritativeOnGround && correctionDelta.y() < -CORRECTION_EPSILON));
+        final boolean newerGroundedStep = correctedSnapshot.onGround() && authoritativeOnGround && currentOnGround
+            && movedHorizontally && !laterNonAscendingPosition;
         final boolean stabilizeVertical = historical && (continuousVerticalMovement
             || (laterVerticalDescent && currentOnGround) || laterLanding
-            || (laterNonAscendingPosition && verticalStabilizationInput) || crouchTakeoff);
+            || (laterNonAscendingPosition && verticalStabilizationInput) || newerTakeoff || newerGroundedStep);
 
         this.snapshots.tailMap(tick, true).replaceAll((snapshotTick, snapshot) -> {
             final Position3f position = snapshot.position().add(correctionDelta);
