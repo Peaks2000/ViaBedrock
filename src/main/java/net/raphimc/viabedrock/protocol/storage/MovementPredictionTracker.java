@@ -26,10 +26,12 @@ public final class MovementPredictionTracker {
     private final NavigableMap<Long, Snapshot> snapshots = new TreeMap<>();
 
     private long lastPositionSyncTick = -1;
+    private long lastTakeoffTick = -1;
 
     public void reset(final long tick) {
         this.snapshots.clear();
         this.lastPositionSyncTick = tick;
+        this.lastTakeoffTick = -1;
     }
 
     public boolean acceptsCorrection(final long tick, final long currentTick, final int rewindHistorySize) {
@@ -39,6 +41,10 @@ public final class MovementPredictionTracker {
     public void record(final long tick, final Position3f position, final Position3f movement, final boolean onGround,
                        final boolean horizontalCollision, final boolean continuousVerticalMovement,
                        final int rewindHistorySize) {
+        final var previous = this.snapshots.lowerEntry(tick);
+        if (previous != null && previous.getValue().onGround() && !onGround && movement.y() > CORRECTION_EPSILON) {
+            this.lastTakeoffTick = tick;
+        }
         this.snapshots.put(tick, new Snapshot(
             position, movement, onGround, horizontalCollision, continuousVerticalMovement, false, false
         ));
@@ -90,8 +96,9 @@ public final class MovementPredictionTracker {
         // A pre-jump correction must not shift a newer takeoff or upward step. An airborne correction
         // must not move a later grounded prediction through its new support (for example a
         // bridge block). Corrections for the current tick always use the server height.
-        final boolean newerTakeoff = correctedSnapshot.onGround() && authoritativeOnGround && !currentOnGround
-            && (verticalStabilizationInput || !laterNonAscendingPosition);
+        final boolean newerTakeoff = !currentOnGround && (this.lastTakeoffTick > tick
+            || (correctedSnapshot.onGround() && authoritativeOnGround
+                && (verticalStabilizationInput || !laterNonAscendingPosition)));
         final boolean movedHorizontally = Math.abs(laterMovement.x()) > CORRECTION_EPSILON
             || Math.abs(laterMovement.z()) > CORRECTION_EPSILON;
         final boolean laterLanding = currentOnGround && (!correctedSnapshot.onGround()

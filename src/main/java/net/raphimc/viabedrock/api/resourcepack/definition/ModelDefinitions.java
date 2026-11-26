@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.api.resourcepack.definition;
 
 import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.resourcepack.ResourcePack;
+import net.raphimc.viabedrock.protocol.BedrockProtocol;
 import net.raphimc.viabedrock.protocol.storage.ResourcePackStorage;
 import org.cube.converter.model.impl.bedrock.BedrockGeometryModel;
 import org.cube.converter.parser.bedrock.geometry.BedrockGeometryParser;
@@ -32,14 +33,19 @@ public class ModelDefinitions {
 
     private final Map<String, BedrockGeometryModel> entityModels = new HashMap<>();
     private final Map<String, BedrockGeometryModel> blockModels = new HashMap<>();
+    private final Map<String, LegacyModel> legacyModels = new HashMap<>();
 
     public ModelDefinitions(final ResourcePackStorage resourcePackStorage) {
+        final var vanilla = BedrockProtocol.MAPPINGS.getBedrockVanillaResourcePacks();
         for (ResourcePack pack : resourcePackStorage.getPackStackBottomToTop()) {
+            final boolean serverPack = vanilla == null || !vanilla.contains(pack);
             for (String modelPath : pack.content().getFilesDeep("models/", ".json")) {
                 try {
                     for (BedrockGeometryModel bedrockGeometry : BedrockGeometryParser.parse(pack.content().getString(modelPath))) {
                         if (modelPath.startsWith("models/entity/")) {
                             this.entityModels.put(bedrockGeometry.getIdentifier(), bedrockGeometry);
+                        } else if (serverPack && modelPath.equals("models/mobs.json")) {
+                            this.legacyModels.put(bedrockGeometry.getIdentifier(), new LegacyModel(bedrockGeometry, pack));
                         } else if (modelPath.startsWith("models/blocks/")) {
                             this.blockModels.put(bedrockGeometry.getIdentifier(), bedrockGeometry);
                         }
@@ -49,6 +55,13 @@ public class ModelDefinitions {
                 }
             }
         }
+    }
+
+    public LegacyModel getLegacyMobModel(final String identifier) {
+        return this.legacyModels.get(identifier);
+    }
+
+    public record LegacyModel(BedrockGeometryModel geometry, ResourcePack pack) {
     }
 
     public BedrockGeometryModel getBlockModel(final String name) {

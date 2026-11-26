@@ -35,6 +35,7 @@ import net.raphimc.viabedrock.protocol.data.enums.java.generated.BossEventOperat
 import net.raphimc.viabedrock.protocol.model.EntityProperties;
 import net.raphimc.viabedrock.protocol.model.Position3f;
 import net.raphimc.viabedrock.protocol.rewriter.EntityMetadataRewriter;
+import net.raphimc.viabedrock.protocol.rewriter.resourcepack.CustomEntityResourceRewriter.LegacyEntityModel;
 import net.raphimc.viabedrock.protocol.types.BedrockTypes;
 import net.raphimc.viabedrock.protocol.types.entitydata.EntityDataTypesBedrock;
 
@@ -65,6 +66,8 @@ public class Entity {
     protected String name;
     protected int age;
     protected boolean hasBossBar;
+    private LegacyEntityModel legacyModel;
+    private LegacyEntityDisplay legacyDisplay;
 
     // Mounting
     protected List<Long> passengers = new ArrayList<>();
@@ -85,6 +88,10 @@ public class Entity {
     }
 
     public void remove() {
+        if (this.legacyDisplay != null) {
+            this.legacyDisplay.remove();
+            this.legacyDisplay = null;
+        }
         if (this.hasBossBar) {
             this.hasBossBar = false;
             final PacketWrapper bossEvent = PacketWrapper.create(ClientboundPackets26_3.BOSS_EVENT, this.user);
@@ -121,7 +128,30 @@ public class Entity {
                 // ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Received unknown entity data: " + dataId + " for entity type: " + this.type);
             }
         }
+        if (this.legacyModel != null) {
+            final var flags = this.entityFlags();
+            final EntityData sharedFlags = EntityMetadataRewriter.sharedFlags(this, flags);
+            javaEntityData.removeIf(data -> data.id() == sharedFlags.id());
+            javaEntityData.add(sharedFlags);
+            if (flags.contains(ActorFlags.INVISIBLE)) {
+                if (this.legacyDisplay != null) {
+                    this.legacyDisplay.remove();
+                    this.legacyDisplay = null;
+                }
+            } else if (this.legacyDisplay == null) {
+                this.legacyDisplay = new LegacyEntityDisplay(this, this.legacyModel);
+                this.legacyDisplay.spawn();
+            }
+        }
         this.onEntityDataChanged();
+    }
+
+    public void setLegacyModel(final LegacyEntityModel legacyModel) {
+        this.legacyModel = legacyModel;
+    }
+
+    public boolean hasLegacyModel() {
+        return this.legacyModel != null;
     }
 
     public final void translateEntityProperties(final EntityProperties properties, final List<EntityData> javaEntityData) {
@@ -175,6 +205,9 @@ public class Entity {
 
     public void setPosition(final Position3f position) {
         this.position = position;
+        if (this.legacyDisplay != null) {
+            this.legacyDisplay.sync();
+        }
     }
 
     public Position3f rotation() {
@@ -183,6 +216,9 @@ public class Entity {
 
     public void setRotation(final Position3f rotation) {
         this.rotation = rotation;
+        if (this.legacyDisplay != null) {
+            this.legacyDisplay.sync();
+        }
     }
 
     public boolean isOnGround() {

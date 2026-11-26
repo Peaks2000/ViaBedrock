@@ -19,6 +19,7 @@ package net.raphimc.viabedrock.protocol.rewriter.resourcepack;
 
 import com.viaversion.viaversion.api.minecraft.item.data.ItemModel;
 import com.viaversion.viaversion.util.Key;
+import net.raphimc.viabedrock.ViaBedrock;
 import net.raphimc.viabedrock.api.resourcepack.ResourcePack;
 import net.raphimc.viabedrock.api.resourcepack.content.Content;
 import net.raphimc.viabedrock.api.resourcepack.definition.EntityDefinitions;
@@ -31,10 +32,28 @@ import org.cube.converter.model.impl.java.JavaItemModel;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 
 public class CustomEntityResourceRewriter extends ItemModelResourceRewriter {
 
     private static final String SUB_FOLDER = "entities";
+    public static final String LEGACY_MODEL_VARIANT = "replacement";
+
+    // Old packs use Bedrock's built-in model and atlas names without a client_entity JSON.
+    private static final Map<String, LegacyBinding> LEGACY_MOBS = Map.ofEntries(
+        legacy("zombie_pigman", "pigzombie", "pig/pigzombie"),
+        legacy("drowned", "zombie.drowned", "zombie/drowned"),
+        legacy("husk", "zombie.husk", "zombie/husk"),
+        legacy("zombie", "zombie", "zombie/zombie"),
+        legacy("skeleton", "skeleton", "skeleton/skeleton"),
+        legacy("stray", "skeleton.stray", "skeleton/stray"),
+        legacy("wither_skeleton", "skeleton.wither", "skeleton/wither_skeleton"),
+        legacy("vindicator", "vindicator", "vindicator"),
+        legacy("witch", "witch", "witch"),
+        legacy("chicken", "chicken", "chicken"),
+        legacy("spider", "spider", "spider/spider"),
+        legacy("cave_spider", "spider", "spider/cave_spider")
+    );
 
     public static ItemModel getItemModel(final String entityIdentifier) {
         return new ItemModel(Key.of("viabedrock", SUB_FOLDER + '/' + StringUtil.makeIdentifierValueSafe(entityIdentifier)));
@@ -49,6 +68,56 @@ public class CustomEntityResourceRewriter extends ItemModelResourceRewriter {
         for (EntityDefinitions.EntityDefinition entityDefinition : resourcePackStorage.getEntities().entities().values()) {
             submitter.accept(() -> this.handleEntityDefinition(resourcePackStorage, entityDefinition));
         }
+        LEGACY_MOBS.forEach((identifier, binding) -> {
+            final var replacement = resourcePackStorage.getModels().getLegacyMobModel(binding.geometry());
+            if (replacement == null) {
+                return;
+            }
+            final Content.LazyImage image = replacement.pack().content().getShortnameImage(binding.texture());
+            if (image != null) {
+                submitter.accept(() -> this.convertLegacyModel(resourcePackStorage, identifier, replacement.geometry(), image));
+            }
+        });
+    }
+
+    private Content convertLegacyModel(final ResourcePackStorage storage, final String identifier,
+                                       final BedrockGeometryModel geometry, final Content.LazyImage image) {
+        final String key = "legacy_" + identifier;
+        final ItemModelContent content = new ItemModelContent(key);
+        try {
+            final String texture = this.getJavaTexturePath("legacy/" + identifier);
+            final JavaItemModel model = geometry.toJavaItemModel("viabedrock:" + texture, RotationType.POST_1_21_11);
+            final var json = model.compile();
+            if (!json.has("elements") || json.getAsJsonArray("elements").isEmpty()
+                || !Float.isFinite(model.getScale()) || model.getScale() <= 0F) {
+                return new ItemModelContent(key);
+            }
+            content.putPngImage("assets/viabedrock/textures/" + texture + ".png", image);
+            content.putModel(LEGACY_MODEL_VARIANT, json);
+            content.generateItemDefinition();
+            storage.getConverterData().put(key, new LegacyEntityModel(getItemModel(key), model.getScale()));
+        } catch (RuntimeException e) {
+            ViaBedrock.getPlatform().getLogger().log(Level.WARNING, "Failed to convert legacy model for " + identifier, e);
+            return new ItemModelContent(key);
+        }
+        return content;
+    }
+
+    public static LegacyEntityModel legacyModel(final ResourcePackStorage storage, final String identifier) {
+        if (!storage.isLoadedOnJavaClient()) {
+            return null;
+        }
+        return (LegacyEntityModel) storage.getConverterData().get("legacy_" + identifier);
+    }
+
+    private static Map.Entry<String, LegacyBinding> legacy(final String mob, final String geometry, final String texture) {
+        return Map.entry("minecraft:" + mob, new LegacyBinding("geometry." + geometry, "textures/entity/" + texture));
+    }
+
+    private record LegacyBinding(String geometry, String texture) {
+    }
+
+    public record LegacyEntityModel(ItemModel itemModel, float scale) {
     }
 
     private Content handleEntityDefinition(final ResourcePackStorage resourcePackStorage, final EntityDefinitions.EntityDefinition entityDefinition) {

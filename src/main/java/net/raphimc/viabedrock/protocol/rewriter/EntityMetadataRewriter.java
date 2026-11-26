@@ -771,6 +771,10 @@ public final class EntityMetadataRewriter {
     }
 
     private static void addSharedFlags(final Entity entity, final Set<ActorFlags> bedrockFlags, final List<EntityData> javaEntityData) {
+        javaEntityData.add(sharedFlags(entity, bedrockFlags));
+    }
+
+    public static EntityData sharedFlags(final Entity entity, final Set<ActorFlags> bedrockFlags) {
         byte javaBitMask = 0; // https://minecraft.wiki/w/Java_Edition_protocol/Entity_metadata#Entity
         if (bedrockFlags.contains(ActorFlags.ONFIRE)) {
             javaBitMask |= (1 << 0);
@@ -787,14 +791,14 @@ public final class EntityMetadataRewriter {
         if (bedrockFlags.contains(ActorFlags.SWIMMING)) {
             javaBitMask |= (1 << 4);
         }
-        if (bedrockFlags.contains(ActorFlags.INVISIBLE) || isZeroScaleArmorStand(entity)) {
+        if (bedrockFlags.contains(ActorFlags.INVISIBLE) || entity.hasLegacyModel() || isZeroScaleArmorStand(entity)) {
             javaBitMask |= (1 << 5);
         }
         if (bedrockFlags.contains(ActorFlags.GLIDING)) {
             javaBitMask |= (byte) (1 << 7);
         }
-        javaEntityData.add(new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SHARED_FLAGS),
-            VersionedTypes.V26_3.entityDataTypes().byteType, javaBitMask));
+        return new EntityData(entity.getJavaEntityDataIndex(EntityDataFields.SHARED_FLAGS),
+            VersionedTypes.V26_3.entityDataTypes().byteType, javaBitMask);
     }
 
     private static boolean isZeroScaleArmorStand(final Entity entity) {
