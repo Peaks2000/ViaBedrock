@@ -142,11 +142,14 @@ public class ItemRewriter extends StoredObject {
         final BedrockMappingData.JavaItemMapping javaItemMapping;
         final Map<BlockState, BedrockMappingData.JavaItemMapping> blockItemMappings = BedrockProtocol.MAPPINGS.getBedrockToJavaBlockItems().get(identifier);
         if (blockItemMappings != null) {
-            if (bedrockItem.blockRuntimeId() == 0) { // Manually constructed items might not have a valid block state set
-                final IntSortedSet validBlockStates = this.blockItemValidBlockStates.get(bedrockItem.identifier());
+            final IntSortedSet validBlockStates = this.blockItemValidBlockStates.get(bedrockItem.identifier());
+            if (bedrockItem.blockRuntimeId() == 0 && validBlockStates != null) {
+                // Manually constructed items might not have a valid block state set.
                 bedrockItem.setBlockRuntimeId(validBlockStates.firstInt());
             }
-            javaItemMapping = blockItemMappings.get(this.user().get(BlockStateRewriter.class).blockState(bedrockItem.blockRuntimeId()));
+            javaItemMapping = validBlockStates == null && bedrockItem.blockRuntimeId() == 0
+                ? unambiguousBlockItemMapping(blockItemMappings)
+                : blockItemMappings.get(this.user().get(BlockStateRewriter.class).blockState(bedrockItem.blockRuntimeId()));
         } else {
             // Trade ingredients use 32767 as an any-aux wildcard. Java still needs a
             // concrete item model, so render its default metadata without discarding
@@ -157,7 +160,9 @@ public class ItemRewriter extends StoredObject {
                 final Map<BlockState, BedrockMappingData.JavaItemMapping> newBlockItemMappings = BedrockProtocol.MAPPINGS.getBedrockToJavaBlockItems().get(newIdentifier);
                 if (newBlockItemMappings != null) {
                     final IntSortedSet validBlockStates = this.blockItemValidBlockStates.get(bedrockItem.identifier());
-                    javaItemMapping = newBlockItemMappings.get(this.user().get(BlockStateRewriter.class).blockState(validBlockStates.firstInt()));
+                    javaItemMapping = validBlockStates == null
+                        ? unambiguousBlockItemMapping(newBlockItemMappings)
+                        : newBlockItemMappings.get(this.user().get(BlockStateRewriter.class).blockState(validBlockStates.firstInt()));
                 } else {
                     javaItemMapping = null;
                 }
@@ -254,6 +259,19 @@ public class ItemRewriter extends StoredObject {
         }
 
         return javaItem;
+    }
+
+    private static BedrockMappingData.JavaItemMapping unambiguousBlockItemMapping(final Map<BlockState, BedrockMappingData.JavaItemMapping> mappings) {
+        // Item registries can list experimental items whose blocks are absent from the session palette.
+        // Use the shared Java mapping if every known variant agrees, without inventing a runtime ID.
+        BedrockMappingData.JavaItemMapping mapping = null;
+        for (final BedrockMappingData.JavaItemMapping candidate : mappings.values()) {
+            if (mapping != null && !mapping.equals(candidate)) {
+                return null;
+            }
+            mapping = candidate;
+        }
+        return mapping;
     }
 
     private static Tag customBlockName(final ResourcePackStorage packs, final String identifier) {
